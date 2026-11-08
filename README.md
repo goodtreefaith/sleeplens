@@ -18,7 +18,7 @@ clinical jargon. Drag the SD card folder (or a zip of it) onto the page and get:
 > and [docs/FORMAT_NOTES.md](docs/FORMAT_NOTES.md) for what we know about the
 > card formats.
 
-**Try the demo:** open [demo/index.html](demo/index.html) in your browser to see
+**Try the demo:** [goodtreefaith.github.io/sleeplens/demo](https://goodtreefaith.github.io/sleeplens/demo/) (or open [demo/index.html](demo/index.html) locally) to see
 the planned screens with made-up data (nothing is uploaded).
 
 ## Your data stays on your device
