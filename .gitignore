@@ -1,0 +1,18 @@
+# Never commit real therapy data
+*.dat
+*.bkp
+*.edf
+*.crc
+*.tgt
+*.idx
+DATALOG/
+STR.edf
+sd-card/
+private-data/
+fixtures/private/
+
+node_modules/
+dist/
+.DS_Store
+*.log
+.env*
