@@ -18,6 +18,9 @@ clinical jargon. Drag the SD card folder (or a zip of it) onto the page and get:
 > and [docs/FORMAT_NOTES.md](docs/FORMAT_NOTES.md) for what we know about the
 > card formats.
 
+**Try the demo:** open [demo/index.html](demo/index.html) in your browser to see
+the planned screens with made-up data (nothing is uploaded).
+
 ## Your data stays on your device
 
 SleepLens is a static site. Your files are read and analysed **inside your
