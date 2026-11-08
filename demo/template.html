@@ -90,7 +90,7 @@ a{color:var(--accent)}
 .btn.primary:hover{filter:brightness(1.07)}
 .btn.icon{padding:8px}
 .btn svg{width:20px;height:20px}
-.content{width:100%;max-width:1520px;margin:0 auto;padding:28px 32px 56px}
+.content{width:100%;max-width:1520px;margin:0 auto;padding:28px 32px 56px;container:main / inline-size}
 .screen-h{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;margin-bottom:20px}
 .screen-h h1{font-size:24px;letter-spacing:-.015em}
 .screen-h .sub{color:var(--muted);font-size:14px}
@@ -156,6 +156,8 @@ a{color:var(--accent)}
 .tile-h .est{margin-left:auto;font-size:12px;font-weight:650;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line-strong);padding:2px 8px;border-radius:999px}
 .tile-v{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 10px}
 .tile-v .big{font-size:40px;font-weight:650;letter-spacing:-.02em;line-height:1.05;font-variant-numeric:tabular-nums}
+.tile-v .pair{display:inline-flex;align-items:baseline;gap:2px;white-space:nowrap}
+.tile-v .big2{font-size:24px;font-weight:650;letter-spacing:-.015em;font-variant-numeric:tabular-nums}
 .tile-v .unit{font-size:15px;color:var(--muted);font-weight:550;margin-left:2px}
 .status{display:inline-flex;align-items:center;gap:6px;font-weight:650;font-size:14px;padding:4px 10px 4px 8px;border-radius:999px;width:max-content;max-width:100%}
 .status svg{width:18px;height:18px;flex:none}
@@ -164,7 +166,7 @@ a{color:var(--accent)}
 .status.talk{background:var(--talk-soft);color:var(--talk)}
 .status.none{background:var(--neutral-soft);color:var(--neutral)}
 .tile-sub{color:var(--ink-2);font-size:14px}
-.breakdown{display:grid;grid-template-columns:auto 1fr auto;gap:6px 12px;font-size:14px;align-items:center}
+.breakdown{display:grid;grid-template-columns:minmax(0,auto) minmax(40px,1fr) auto;gap:6px 12px;font-size:14px;align-items:center}
 .breakdown .bar{height:8px;border-radius:4px;background:var(--surface-2);overflow:hidden}
 .breakdown .bar span{display:block;height:100%;background:var(--ink-2);opacity:.55;border-radius:4px}
 .breakdown .v{font-variant-numeric:tabular-nums;color:var(--ink-2);text-align:right}
@@ -202,9 +204,11 @@ details.what p + p{margin-top:6px}
 .note svg{width:20px;height:20px;color:var(--muted);margin-top:1px}
 .note.warn{background:var(--watch-soft)}
 .note.warn svg{color:var(--watch)}
-.kv{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:14px;margin:0}
-.kv dt{color:var(--muted)}
-.kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;color:var(--ink)}
+.kv{display:grid;grid-template-columns:minmax(min-content,max-content) minmax(max-content,1fr);gap:8px 16px;font-size:14px;margin:0}
+.kv dt{color:var(--muted);overflow-wrap:normal}
+.kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}
+.aside > .card{container-type:inline-size}
+@container (max-width: 240px){.kv{grid-template-columns:minmax(0,1fr);gap:2px}.kv dd{text-align:left;white-space:normal;margin-bottom:8px}}
 .linkcard{display:flex;align-items:center;gap:14px;text-decoration:none;color:inherit}
 .linkcard:hover{border-color:var(--line-strong)}
 .linkcard svg{width:22px;height:22px;color:var(--accent);flex:none}
@@ -315,6 +319,11 @@ table.cmp tr.adv[hidden]{display:none}
 .paper .strip-t{font-size:12px;fill:#4A5560}
 
 /* ---------- responsive ---------- */
+@media (max-width:1439px){
+  :root{--nav-w:208px}
+  .content{padding:24px 24px 48px}
+  .with-aside{grid-template-columns:minmax(0,1fr) 300px}
+}
 @media (max-width:1279px){
   :root{--nav-w:208px}
   .content{padding:24px 24px 48px}
@@ -384,6 +393,14 @@ table.cmp tr.adv[hidden]{display:none}
   table.cmp th,table.cmp td{padding:9px 6px;font-size:13px}
 }
 
+/* Side panels follow the space the content area really has, not the viewport.
+   Below 944px of content width two tiles would drop under ~300px each beside a
+   300px panel, so the panel moves below and packs its cards into columns. */
+@container main (max-width: 943px){
+  .with-aside,.report-layout{grid-template-columns:minmax(0,1fr)}
+  .aside{grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr));align-items:start}
+  .report-layout .paper{max-width:860px;width:100%;justify-self:center}
+}
 /* ---------- print ---------- */
 @media print{
   @page{margin:14mm}
@@ -695,7 +712,7 @@ function renderTonight() {
   const pS = pressureStatus(n);
   const tPres = `<article class="card tile" aria-labelledby="t-pres">
     <header class="tile-h">${ICON.gauge}<h3 id="t-pres">Pressure</h3></header>
-    <div class="tile-v"><span class="big">${r1(n.pm)}</span><span class="unit">cmH₂O typical</span><span class="big" style="font-size:26px">${r1(n.p90)}</span><span class="unit">high (90%)</span></div>
+    <div class="tile-v"><span class="big">${r1(n.pm)}</span><span class="unit">cmH₂O typical</span><span class="pair"><span class="big2">${r1(n.p90)}</span><span class="unit">high (90%)</span></span></div>
     ${statusPill(pS, STATUS_WORD.pressure[pS])}
     ${rangeBar({ min: P_LO, max: P_HI, aria: `Typical pressure ${r1(n.pm)}, high ${r1(n.p90)} centimetres of water. Your setting range is ${SET.min} to ${SET.max}.`, zones: [{ k: "none", from: P_LO, to: SET.min, label: "" }, { k: "band", from: SET.min, to: SET.max, label: `Your setting ${SET.min}–${SET.max}` }, { k: "none", from: SET.max, to: P_HI, label: "" }], markers: [{ v: n.pm, label: "typical" }, { v: n.p90, cls: "hi", label: "high" }], ticks: [P_LO, SET.min, SET.max, P_HI] })}
     <p class="tile-sub">${pS === "good" ? `Stayed inside the range the machine is allowed to use.` : pS === "none" ? `Mostly below today's ${SET.min}–${SET.max} range. The setting was probably lower on this date.` : `Reached the top of the range at times. If this happens on most nights, mention it at your next visit.`}${ds ? ` Peak ${r1(ds.pMax)}.` : ""}</p>
@@ -707,9 +724,9 @@ function renderTonight() {
       <dt>Started</dt><dd>${esc(midDate(n.start.slice(0, 10)))}, ${clockOf(n.start)}</dd>
       <dt>Ended</dt><dd>${clockOf(n.end)}</dd>
       ${(n.ss || []).length > 1 ? `<dt>Mask-on stretches</dt><dd>${n.ss.map(x => `${clockOf(x[0])}–${clockOf(x[1])}`).join("<br>")}</dd>` : ""}
-      <dt>Pressure setting</dt><dd>${SET.min}–${SET.max} cmH₂O (auto)</dd>
-      ${n.a1 != null ? `<dt>${EVT.apnea1.name}</dt><dd>${n.a1}</dd><dt>${EVT.apnea2.name}</dt><dd>${n.a2}</dd><dt>${EVT.hypopnea.name}</dt><dd>${n.h}</dd>` : `<dt>Breathing events</dt><dd class="na">not recorded by the machine</dd>`}
-      ${ds ? `<dt>Leak baseline tonight</dt><dd>${r1(ds.base)} L/min</dd>` : ""}
+      <dt>Pressure range</dt><dd>${SET.min}–${SET.max} cmH₂O (auto)</dd>
+      ${n.a1 != null ? `<dt>Obstructive apneas</dt><dd>${n.a1}</dd><dt>Central apneas</dt><dd>${n.a2}</dd><dt>Hypopneas</dt><dd>${n.h}</dd>` : `<dt>Breathing events</dt><dd class="na">not recorded by the machine</dd>`}
+      ${ds ? `<dt>Leak baseline</dt><dd>${r1(ds.base)} L/min</dd>` : ""}
     </dl></section>`;
   const tlLink = det
     ? `<a class="card linkcard" href="#timeline/${n.d}" data-act="screen" data-s="timeline">${ICON.wave}<div><h2>Open the night timeline</h2><p>See when events happened, and how pressure and seal changed around them.</p></div>${ICON.chev}</a>`
@@ -773,7 +790,7 @@ function renderTimeline() {
         <ul class="evlist">${evs.map(e => `<li><button type="button" data-act="ev" data-i="${e.i}" aria-pressed="${state.evSel === e.i}">${swatch(e.type)}<span class="t">${e.t.slice(0, 5)}</span><span>${esc(EVT[e.type].name)}</span></button></li>`).join("")}</ul></section>
       <section class="card" aria-labelledby="tn-h"><div class="card-h"><h2 id="tn-h">Tonight in numbers</h2></div>
         <dl class="kv"><dt>Pressure, median</dt><dd>${r1(ds.pMed)} cmH₂O</dd><dt>Pressure, high (90%)</dt><dd>${r1(ds.pHigh)} cmH₂O</dd>
-        <dt>Leak baseline (est.)</dt><dd>${r1(ds.base)} L/min</dd><dt>Large leak time (est.)</dt><dd>${Math.round(ds.aboveMin)} min</dd></dl>
+        <dt>Leak baseline</dt><dd>${r1(ds.base)} L/min</dd><dt>Large leak (est.)</dt><dd>${Math.round(ds.aboveMin)} min</dd></dl>
         <p class="quiet" style="margin-top:10px">Large leak here means more than 20 L/min above this night's own baseline. It is an estimate, because this machine reports leak including the mask vent.</p></section>
     </aside>
   </div>`;
