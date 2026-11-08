@@ -1,4 +1,5 @@
 import type {
+  ActiveInterval,
   DatHeader,
   DatRecord,
   DatSeries,
@@ -124,6 +125,9 @@ function histPercentile(hist: Uint32Array, total: number, p: number): number {
   return hist.length - 1;
 }
 
+/** A timestamp gap above this many seconds ends an active interval. Smaller gaps are clock drift. */
+export const PAUSE_GAP_SECONDS = 60;
+
 export interface SummarizeOptions {
   /** Keep a 1 Hz series per channel. Default true. */
   includeSeries?: boolean;
@@ -150,6 +154,13 @@ export function summarizeDat(buf: Uint8Array, options: SummarizeOptions = {}): D
   let invalid = 0;
   let first: LocalTime | null = null;
   let last: LocalTime | null = null;
+  const sessions: ActiveInterval[] = [];
+  let intervalStart: LocalTime | null = null;
+  const closeInterval = (lastTime: LocalTime) => {
+    if (!intervalStart) return;
+    const end = addSeconds(lastTime, 1);
+    sessions.push({ start: intervalStart, end, minutes: (end.epochSec - intervalStart.epochSec) / 60 });
+  };
   let pMin = Infinity;
   let pMax = -Infinity;
   let lMax = 0;
@@ -166,6 +177,10 @@ export function summarizeDat(buf: Uint8Array, options: SummarizeOptions = {}): D
     }
     valid++;
     if (!first) first = rec.time;
+    if (last && rec.time!.epochSec - last.epochSec > PAUSE_GAP_SECONDS) {
+      closeInterval(last);
+      intervalStart = rec.time;
+    } else if (!intervalStart) intervalStart = rec.time;
     last = rec.time;
     const tenths = Math.round(rec.setPressure * 10);
     pressureHist[Math.min(tenths, pressureHist.length - 1)]!++;
@@ -176,8 +191,9 @@ export function summarizeDat(buf: Uint8Array, options: SummarizeOptions = {}): D
     if (rec.leak > lMax) lMax = rec.leak;
   }
 
+  if (last) closeInterval(last);
   const end = last ? addSeconds(last, 1) : null;
-  const spanSeconds = first && end ? end.epochSec - first.epochSec : 0;
+  const spanSeconds = sessions.reduce((sum, x) => sum + (x.end.epochSec - x.start.epochSec), 0);
   return {
     serial: header.serial,
     start: first,
@@ -187,9 +203,11 @@ export function summarizeDat(buf: Uint8Array, options: SummarizeOptions = {}): D
     recordSeconds: valid,
     usageSeconds: spanSeconds,
     usageMinutes: spanSeconds / 60,
+    sessions,
     pressure: {
       min: valid ? round1(pMin) : 0,
       mean: valid ? round3(pressureSum / valid) : 0,
+      p90: histPercentile(pressureHist, valid, 0.9) / 10,
       p95: histPercentile(pressureHist, valid, 0.95) / 10,
       max: valid ? round1(pMax) : 0,
     },

@@ -65,10 +65,12 @@ interface NightRow {
   end: string | null;
   usageMinutes: number;
   pressureMean: number;
-  pressureP95: number;
+  pressureP90: number;
+  activeIntervals: number;
   leakMedian: number;
   session: SessionSummary | null;
   eventCounts: Record<string, number> | null;
+  sessions: Array<{ start: string; end: string; minutes: number }>;
   recordCount: number;
   invalidRecords: number;
 }
@@ -100,11 +102,13 @@ for (const n of nights) {
     end: sum.end?.iso ?? null,
     usageMinutes: Math.round(sum.usageMinutes * 10) / 10,
     pressureMean: Math.round(sum.pressure.mean * 10) / 10,
-    pressureP95: sum.pressure.p95,
+    pressureP90: sum.pressure.p90,
+    activeIntervals: sum.sessions.length,
     leakMedian: sum.leak.median,
     session,
     eventCounts: counts,
     recordCount: sum.recordCount,
+    sessions: sum.sessions.map((x) => ({ start: x.start.iso, end: x.end.iso, minutes: Math.round(x.minutes * 10) / 10 })),
     invalidRecords: sum.invalidRecords,
   });
   detail.push({ events });
@@ -124,7 +128,7 @@ if (json) {
   console.log(
     `Aeonmed AS100 series card <SERIAL>: ${detection.nights.length} nights, ${detection.months.length} months, bkp ${bkp ? 'found' : 'missing'}`,
   );
-  console.log('date      start-end    usage  mean  p95  leak   AHI  events');
+  console.log('date      start-end    usage  mean   p90  leak   AHI  events');
   for (const r of rows) {
     const ev = r.eventCounts
       ? Object.entries(r.eventCounts)
@@ -138,7 +142,7 @@ if (json) {
         `${clock(r.start)}-${clock(r.end)}`,
         hm(r.usageMinutes).padStart(5),
         r.pressureMean.toFixed(1).padStart(5),
-        r.pressureP95.toFixed(1).padStart(4),
+        r.pressureP90.toFixed(1).padStart(5),
         String(r.leakMedian).padStart(4),
         (r.session ? r.session.ahi.toFixed(1) : '-').padStart(5),
         ev,
@@ -147,15 +151,17 @@ if (json) {
   }
   if (onlyNight && rows[0]) {
     const r = rows[0];
-    console.log(`\nNight ${r.date}: ${r.recordCount} records (${r.invalidRecords} invalid), ${r.usageMinutes} min`);
+    console.log(`\nNight ${r.date}: ${r.recordCount} records (${r.invalidRecords} invalid), ${r.usageMinutes} min in ${r.sessions.length} active interval(s)`);
+    for (const x of r.sessions) console.log(`  ${x.start.slice(11)} - ${x.end.slice(11)}  ${x.minutes} min`);
     if (r.session) {
       const s = r.session;
       console.log(
-        `bkp summary: session ${s.sessionNumber}, usage ${s.usageMinutes} min, pressure min/mean/p95 ${s.pressure.min}/${s.pressure.mean}/${s.pressure.p95}, AHI ${s.ahi}, AI ${s.apneaIndex}, HI ${s.hypopneaIndex}`,
+        `bkp summary: session ${s.sessionNumber}, usage ${s.usageMinutes} min, pressure min/mean/P90 ${s.pressure.min}/${s.pressure.mean}/${s.pressure.p90}, observed max ${s.observedMaxPressure}, AHI ${s.ahi}, apnea index ${s.apneaIndex}, type-2 index ${s.apnea2Index}, hypopnea index ${s.hypopneaIndex}`,
       );
       for (const e of detail[0]!.events)
-        console.log(`  ${e.time.iso.slice(11)}  ${e.eventType} ${e.pressure ?? e.value}`);
+        console.log(`  ${e.time.iso.slice(11)}  ${e.eventType}${e.likelyKind ? ` (likely ${e.likelyKind}, provisional)` : ''} ${e.pressure ?? e.value}`);
     } else console.log('No matching bkp session summary (older than the ring buffer, or no bkp).');
   }
+  if (bkp && !onlyNight) console.log(`\nbkp: ${bkp.sessions.length} session summaries, ${bkp.events.length} events, ${bkp.counters.length} counter records, ${bkp.stats.unknownBlocks} unknown blocks`);
   console.error(`(${elapsed}s)`);
 }

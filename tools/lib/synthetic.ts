@@ -27,6 +27,10 @@ export interface SynthNight {
   sessionNumber: number;
   /** One timestamp skip (clock drift) at this record index. */
   skipAt: number;
+  /** Value of the E8 level entry (0-14 observed on real cards). */
+  level: number;
+  /** A mid-night pause: records from `pauseAt` on are stamped `pauseSeconds` later. */
+  pause?: { at: number; seconds: number };
 }
 
 export const SYNTH_NIGHTS: SynthNight[] = [
@@ -43,6 +47,7 @@ export const SYNTH_NIGHTS: SynthNight[] = [
     ],
     sessionNumber: 1,
     skipAt: 341,
+    level: 2,
   },
   {
     start: { y: 2030, mo: 1, d: 16, h: 23, mi: 5, s: 0 },
@@ -56,13 +61,39 @@ export const SYNTH_NIGHTS: SynthNight[] = [
     ],
     sessionNumber: 2,
     skipAt: Number.MAX_SAFE_INTEGER, // no drift skip on this night
+    level: 14,
   },
+  {
+    // Starts at second 8 so the first bkp entry of the night disguises itself as a u16 year (2078).
+    start: { y: 2030, mo: 1, d: 17, h: 21, mi: 15, s: 8 },
+    records: 600,
+    pressureSteps: [[0, 5.0], [200, 6.5], [450, 7.0]],
+    leakBase: 25,
+    leakMod: 8,
+    events: [
+      { at: 100, kind: 'apnea1', duration: 14 },
+      { at: 250, kind: 'apnea2', duration: 12 },
+      { at: 400, kind: 'apnea2', duration: 12 },
+      { at: 500, kind: 'hypopnea', duration: 16 },
+    ],
+    sessionNumber: 3,
+    skipAt: 100,
+    level: 9,
+    pause: { at: 300, seconds: 1800 }, // 30 minute pause
+  },
+];
+
+/** Counter blocks: [year, month, day, counterA, counterB]. Counter A resets to 0 on a filter reset. */
+const COUNTERS: Array<Array<[number, number, number, number, number] | null>> = [
+  [[2030, 1, 15, 1000, 5000], [2030, 1, 16, 1200, 5200]],
+  [[2030, 1, 17, 0, 5400], null],
 ];
 
 const TEXT_LINES: Array<{ night: number; at: number; text: string }> = [
   { night: 0, at: -5, text: 'SD card Insert' },
   { night: 0, at: 0, text: 'Parameter change Humidifire 15 to 2' },
   { night: 0, at: 599, text: 'Stop work by Auto Off in WorkScreen' },
+  { night: 2, at: 0, text: 'Screen Filter to Reset' },
   { night: 1, at: 0, text: 'Machine Reset = 6  Software Version TEST-0.00' },
 ];
 
@@ -96,9 +127,20 @@ function weekday(st: Stamp): number {
   return (new Date(Date.UTC(st.y, st.mo - 1, st.d)).getUTCDay() + 6) % 7; // Monday = 0
 }
 
-/** Timestamp of record `i`, including the one-second clock-drift skip. */
+/** Timestamp of record `i`, including the one-second clock-drift skip and any pause. */
 export function recordStamp(n: SynthNight, i: number): Stamp {
-  return addSec(n.start, i + (i >= n.skipAt ? 1 : 0));
+  const pause = n.pause && i >= n.pause.at ? n.pause.seconds : 0;
+  return addSec(n.start, i + (i >= n.skipAt ? 1 : 0) + pause);
+}
+
+/** Active (therapy) seconds of a night: wall clock minus pauses, drift skips included. */
+export function activeSeconds(n: SynthNight): number {
+  return n.records + (n.skipAt < n.records ? 1 : 0);
+}
+
+/** Round half up, as the device does for its per-hour indices (x10). */
+export function indexX10(count: number, usageMinutes: number): number {
+  return Math.floor((count * 600) / usageMinutes + 0.5);
 }
 
 function putStamp(dv: DataView, o: number, st: Stamp) {
@@ -128,7 +170,10 @@ function settingsBlock(st: Stamp): Uint8Array {
   dv.setUint16(9, 0x50, true); // 8.0 max
   b[0x20] = 0x01;
   putStamp(dv, 0x21, st);
-  b[0x2e] = 3; // humidifier level
+  b[0x17] = 4; // humidifier level (Confirmed offset)
+  b[0x18] = 15; // ramp minutes (Guess), kept raw
+  b[0x2e] = 3; // constant 3 on real cards; NOT the humidifier level
+  b[0x7f] = 0x88;
   return b;
 }
 
@@ -195,24 +240,45 @@ function entry(st: Stamp, code: number, value: number): Uint8Array {
 
 function buildBkp(): Uint8Array {
   const blocks: Uint8Array[] = [];
-  const entries: Uint8Array[] = [];
 
   // Opening settings snapshots, one per night.
   for (const n of SYNTH_NIGHTS) blocks.push(settingsBlock(n.start));
 
+  // Event blocks, chunked per night (like separate ring-buffer writes).
   SYNTH_NIGHTS.forEach((n, ni) => {
+    const entries: Uint8Array[] = [];
     entries.push(entry(recordStamp(n, 0), 0xee, 0)); // session start marker
     for (const [at, p] of n.pressureSteps) entries.push(entry(recordStamp(n, at), 0xe0, Math.round(p * 2)));
-    entries.push(entry(recordStamp(n, 300 + ni * 10), 0xe8, 2)); // level
+    entries.push(entry(recordStamp(n, 300 + ni * 10), 0xe8, n.level)); // level
     for (const ev of n.events) {
       entries.push(entry(recordStamp(n, ev.at), EVENT_CODE[ev.kind], Math.round(pressureAt(n, ev.at) * 2)));
     }
     entries.push(entry(recordStamp(n, n.records - 1), 0xe7, 0)); // session end marker
+    entries.sort((a, b) => cmpEntry(a, b));
+    for (let i = 0; i < entries.length; i += 16) {
+      const b = new Uint8Array(128).fill(0xff);
+      entries.slice(i, i + 16).forEach((e, k) => b.set(e, k * 8));
+      blocks.push(b);
+    }
   });
-  entries.sort((a, b) => cmpEntry(a, b));
-  for (let i = 0; i < entries.length; i += 16) {
+
+  // Counter blocks: two 64-byte records each; A = time since filter reset, B cumulative, C = B - 1.
+  for (const pair of COUNTERS) {
     const b = new Uint8Array(128).fill(0xff);
-    entries.slice(i, i + 16).forEach((e, k) => b.set(e, k * 8));
+    pair.forEach((rec, k) => {
+      if (!rec) return;
+      const r = new Uint8Array(64);
+      const dv = new DataView(r.buffer);
+      dv.setUint16(0, rec[0], true);
+      r[2] = rec[1];
+      r[3] = rec[2];
+      dv.setUint32(4, rec[3], true);
+      dv.setUint32(8, rec[4], true);
+      dv.setUint32(12, rec[4] - 1, true);
+      r[0x14] = 1;
+      r[0x3f] = 0x88;
+      b.set(r, k * 64);
+    });
     blocks.push(b);
   }
 
@@ -220,9 +286,8 @@ function buildBkp(): Uint8Array {
   for (const n of SYNTH_NIGHTS) {
     const b = new Uint8Array(128);
     const dv = new DataView(b.buffer);
-    const hours = n.records / 3600;
-    const apneas = n.events.filter((e) => e.kind !== 'hypopnea').length;
-    const hypos = n.events.length - apneas;
+    const usageMinutes = Math.ceil(activeSeconds(n) / 60);
+    const count = (...kinds: string[]) => n.events.filter((e) => kinds.includes(e.kind)).length;
     const mean = n.pressureSteps.reduce((sum, [at, p], k) => {
       const next = n.pressureSteps[k + 1]?.[0] ?? n.records;
       return sum + p * (next - at);
@@ -230,7 +295,9 @@ function buildBkp(): Uint8Array {
     const sorted: number[] = [];
     for (let i = 0; i < n.records; i++) sorted.push(Math.round(pressureAt(n, i) * 10));
     sorted.sort((a, c) => a - c);
-    const p95 = sorted[Math.ceil(0.95 * n.records) - 1]!;
+    // Coarse P90 and observed max, stored in 0.5 cmH2O steps (Likely).
+    const coarse = (tenths: number) => Math.round(tenths / 5) * 5;
+    const p90 = coarse(sorted[Math.ceil(0.9 * n.records) - 1]!);
     b[0] = 0xa5;
     b[1] = 0xa5;
     b[2] = 0x01;
@@ -245,15 +312,14 @@ function buildBkp(): Uint8Array {
     dv.setUint16(0x4a, n.sessionNumber, true);
     dv.setUint16(0x4c, sorted[0]!, true);
     dv.setUint16(0x4e, Math.round(mean * 10), true);
-    dv.setUint16(0x50, p95, true);
-    // The device rounds usage up to whole minutes of wall-clock span (Likely).
-    const span = n.records + (n.skipAt < n.records ? 1 : 0);
-    dv.setUint16(0x54, Math.ceil(span / 60), true);
-    dv.setUint16(0x58, Math.round((10 * n.events.length) / hours), true);
-    dv.setUint16(0x5a, Math.round((10 * apneas) / hours), true);
-    dv.setUint16(0x5c, Math.round((10 * hypos) / hours), true);
-    dv.setUint16(0x5e, 0x50, true);
-    dv.setUint16(0x60, 4, true);
+    dv.setUint16(0x50, p90, true);
+    // The device rounds usage (sum of active intervals) up to whole minutes (Likely).
+    dv.setUint16(0x54, usageMinutes, true);
+    dv.setUint16(0x58, indexX10(count('apnea1', 'apnea2', 'hypopnea'), usageMinutes), true);
+    dv.setUint16(0x5a, indexX10(count('apnea1', 'apnea2'), usageMinutes), true);
+    dv.setUint16(0x5c, indexX10(count('apnea2'), usageMinutes), true);
+    dv.setUint16(0x5e, coarse(sorted[n.records - 1]!), true);
+    dv.setUint16(0x60, indexX10(count('hypopnea'), usageMinutes), true);
     blocks.push(b);
   }
 

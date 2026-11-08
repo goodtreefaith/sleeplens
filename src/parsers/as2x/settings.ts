@@ -13,7 +13,10 @@ export function parseSettingsBlock(buf: Uint8Array, offset: number): SettingsSna
   return {
     time: readTimestamp(dv, offset + 0x21),
     pressureFields,
-    humidifierRaw: buf[offset + 0x2e]!,
+    minPressure: dv.getUint16(offset + 0x03, true) / 10,
+    startPressure: dv.getUint16(offset + 0x07, true) / 10,
+    maxPressure: dv.getUint16(offset + 0x09, true) / 10,
+    humidifierLevel: buf[offset + 0x17]!,
     raw: buf.slice(offset, offset + BLOCK_SIZE),
   };
 }
