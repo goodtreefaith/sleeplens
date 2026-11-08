@@ -16,3 +16,7 @@ dist/
 .DS_Store
 *.log
 .env*
+
+# ...except the fully synthetic AS2X test card (fake serial TEST0000, dates in 2030)
+!fixtures/synthetic-as2x/
+!fixtures/synthetic-as2x/**

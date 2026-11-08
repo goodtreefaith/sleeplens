@@ -28,7 +28,7 @@ contents and no server. You can save the page and run it offline.
 
 | Machine family | SD card layout | Status |
 | --- | --- | --- |
-| AS2X-series auto CPAP (firmware AM-1.x) | `<serial><YYYYMM>/<YYYYMMDD>.dat` + `<serial>.bkp` | Being decoded (first target) |
+| Aeonmed AS100 series (reports itself as `AS2X`) | `<serial><YYYYMM>/<YYYYMMDD>.dat` + `<serial>.bkp` | Being decoded (first target) |
 | ResMed AirSense 10 / 11 | `DATALOG/`, `STR.edf` (EDF+) | Planned, format is public |
 | Philips DreamStation | `P-Series/` | Later, help wanted |
 
@@ -51,3 +51,19 @@ synthetic or fully anonymised (serial numbers, dates and times shifted).
 ## Licence
 
 [MIT](LICENSE)
+
+## Developer tools
+
+Node 20+ and `npm install` first. Parsers live in `src/parsers/as2x/` (pure
+`DataView` code, reusable in the browser).
+
+- `npm run inspect -- <card folder> [--json] [--night YYYYMMDD]` reads an
+  Aeonmed AS100 series card (read-only, one file at a time) and prints one row
+  per night: times, usage, pressure, median leak and, when the `.bkp` log still
+  has it, AHI and event counts. The serial is always printed as `<SERIAL>`.
+  Never paste real output into issues or commits without checking it first.
+- `npm run make-fixture` regenerates the fully synthetic card in
+  `fixtures/synthetic-as2x/` (fake serial `TEST0000`, dates in 2030). It is the
+  only card data allowed in the repo.
+- `npm test` runs the parser tests against that fixture; `npm run typecheck`
+  runs the strict TypeScript check.

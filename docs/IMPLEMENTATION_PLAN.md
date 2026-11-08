@@ -172,7 +172,7 @@ general guide.
 
 ## 5. Phases
 
-### Phase 0: decode the AS2X format (blocker for the author's own card)
+### Phase 0: decode the Aeonmed AS100 (AS2X) format (blocker for the author's own card)
 - Write a Node script `tools/inspect-as2x.ts` that dumps the record header,
   plots each of the 400-sample slots over a night and guesses channel
   boundaries by spotting smooth vs stepped series.

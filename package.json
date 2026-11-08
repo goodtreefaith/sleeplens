@@ -1,0 +1,21 @@
+{
+  "name": "sleeplens",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Browser-only CPAP data viewer (developer tooling and parsers)",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "inspect": "tsx tools/inspect-as2x.ts",
+    "make-fixture": "tsx tools/make-synthetic-as2x.ts fixtures/synthetic-as2x",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
