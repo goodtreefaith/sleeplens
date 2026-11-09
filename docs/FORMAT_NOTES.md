@@ -264,10 +264,10 @@ snore count, `AE` treatment start, `AF` treatment end.
 | `E1` | **Obstructive apnea** | pressure at event (0.5 steps) | Confirmed (NeoRead) |
 | `E2` | **Central apnea** | pressure at event | Confirmed (NeoRead) |
 | `E3` | Hypopnea | value (0.5 steps) | Confirmed |
-| `E4` | Snore level | | Likely (NeoRead, older firmware) |
-| `E5` | Big leak | | Likely (NeoRead, older firmware) |
-| `E6` | Flow limitation | | Likely (NeoRead, older firmware) |
-| `E7` | Snore count. Earlier read as a session marker | | Likely (NeoRead, older firmware) |
+| `E4` | Snore level. Never seen on the sample card | | Likely (NeoRead, older firmware) |
+| `E5` | Big leak. Never seen on the sample card | | Likely (NeoRead, older firmware) |
+| `E6` | Flow limitation. Never seen on the sample card | | Likely (NeoRead, older firmware) |
+| `E7` | Snore count, once per session. Always 0 on the sample card (SNI is 0 too). Earlier read as a session marker | count | Likely |
 | `E8` | Level 0-14 derived from slots 270-319 (NeoRead's leak flow), so most likely a **leak level**. No NeoRead equivalent | level | Likely (derivation), Unresolved (meaning) |
 | `EE` | Treatment start | | Likely (NeoRead, older firmware) |
 | `EF` | Treatment end | | Likely (NeoRead, older firmware) |
@@ -320,9 +320,8 @@ Offsets from the start of the `C5 C5` block. Field names are NeoRead's.
 
 On the sample card `0x03` and `0x07` are always equal: start pressure and
 minimum pressure happen to be set to the same value. This replaces the old
-guess that both meant "minimum and start pressure". Settings never changed
-deliberately on the sample card, so the new fields have not yet been seen
-changing.
+guess that both meant "minimum and start pressure". Maximum pressure and
+humidifier did change on the sample card; see the real-card check below.
 
 #### Text event lines
 
@@ -347,6 +346,33 @@ time since the filter was reset. Unit roughly 61.4 s per count (Guess).
   then hours used, valid days, max pressure, mean pressure, P90, AHI, AI, HI
   and CAI.
 
+### Real-card check after the NeoRead update
+
+The updated parser was run on the sample card (firmware `1.01.47.01`,
+hardware `1.228`, 690 nights, 370 session summaries, 19,583 event entries).
+The old and new parsers read the `.bkp` identically (same block counts, 38
+unknown blocks before and after).
+
+- **`E4`, `E5`, `E6` never appear.** This firmware does not log snore level,
+  big leak or flow limitation as events.
+- **`E7` always has value 0** and appears once per session, next to `EE` /
+  `EF` (534 `E7`, 537 `EE`, 537 `EF`). This fits NeoRead's "snore count"
+  written once per session: zero snores, which matches SNI = 0 on every
+  night. It also explains the earlier "session marker" reading.
+- **SNI (`0x56`) and large-leak minutes (`0x52`) are 0 on all 370
+  summaries.**
+- **The two leak channels are different things.** Over the last week of
+  nights, slots 270-319 had a median of 0 L/min, a p95 of 0-13 and a maximum of
+  6-32. Slot 384 had a median of 24-29 L/min. Slot 384 looks like **total leak**
+  (it includes the mask's built-in vent flow); slots 270-319 look like
+  **unintentional (excess) leak** above the vent flow. `E8` levels rise on
+  nights when slots 270-319 rise, so `E8` is most likely an excess-leak level.
+  Which one the machine's screen shows is still to be checked.
+- **Settings did change on this card**: maximum pressure 10 → 8, start and
+  minimum pressure 4 → 5 (always equal to each other), humidifier 1-4. Mode
+  is always 1 (Auto CPAP), ramp 15, AS-Elex 3, Auto ON and OFF on, leak alert
+  off, pressure-unit byte always 1.
+
 ### Open questions
 
 Settled by NeoRead:
@@ -360,14 +386,15 @@ Settled by NeoRead:
 
 Still need the real card (NeoRead runs on Windows only):
 
-1. Does the card's newer firmware really use `E4`-`E7` like NeoRead's
-   `A4`-`A7`? (`E7` was earlier read as a session marker.) What is `E8`;
-   is it a leak level?
-2. Which leak matches the machine's screen: slots 270-319 or slot 384? Is
-   one total leak and the other unintentional leak?
-3. Pressure unit (`C5 C5` `0x1D`): which value means hPa and which cmH2O?
-4. Confirm SNI (`0x56`) and large-leak minutes (`0x52`) against NeoRead's
-   report for the same night. Both read 0 on the sample card so far.
+1. `E4`-`E6` never appear on firmware `1.01.47.01` and `E7` is always 0, so
+   whether they match NeoRead's `A4`-`A7` can't be proven from this card.
+   A card from someone who snores would settle `E4` / `E7`.
+2. Which leak the machine's screen shows: slot 384 (likely total) or slots
+   270-319 (likely excess)? Compare with the screen for the same nights.
+3. Pressure unit (`C5 C5` `0x1D`, always 1 here): does 1 mean hPa or cmH2O?
+   Read off the machine's screen.
+4. SNI and large-leak minutes read 0 on every night; check that the screen's
+   SNI is also 0.
 
 ## ResMed AirSense 10 / 11
 
