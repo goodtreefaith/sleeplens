@@ -1,10 +1,10 @@
 import type { Period } from "../api/types";
 import { isDate } from "./dates";
 
-export type Screen = "import" | "overview" | "night" | "trends" | "settings" | "learn";
+export type Screen = "import" | "overview" | "night" | "trends" | "settings" | "learn" | "rhythm";
 export interface Route { screen: Screen; date?: string; term?: string; period?: Period | "all" }
 
-const SCREENS: Screen[] = ["import", "overview", "night", "trends", "settings", "learn"];
+const SCREENS: Screen[] = ["import", "overview", "night", "trends", "settings", "learn", "rhythm"];
 
 export function parseHash(hash: string): Route {
   const [path, query] = hash.replace(/^#\/?/, "").split("?");

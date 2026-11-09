@@ -25,3 +25,5 @@
   .v2-overview .night-score,.v2-overview .night-suggestions,.v2-overview .night-content,.v2-overview .night-context{grid-column:auto;grid-row:auto}
   .v2-overview .period-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+/* The desktop period row needs a second line in the browser's phone preview. */
+@media(max-width:600px){.v2-overview .screen-h>.seg-ctl{max-width:100%;min-width:0;flex-wrap:wrap}}

@@ -1,0 +1,405 @@
+split by participant, sorted identifiers: 15 train / 5 selection / 5 test
+train IDs: ucddb002, ucddb003, ucddb005, ucddb006, ucddb007, ucddb008, ucddb009, ucddb010, ucddb011, ucddb012, ucddb013, ucddb014, ucddb015, ucddb017, ucddb018
+selection IDs: ucddb019, ucddb020, ucddb021, ucddb022, ucddb023
+test IDs: ucddb024, ucddb025, ucddb026, ucddb027, ucddb028
+
+default preset on untouched test:
+5 nights, 5 participants, 3929 scored epochs, 138 abstentions
+pooled coverage 96.6%; mean per-night coverage 96.4%; mean per-night accuracy 37.2%
+participant-bootstrap 95% interval for accuracy: 35.1% to 39.6%
+participant-bootstrap 95% interval for kappa: 0.040 to 0.115
+
+four classes, abstentions excluded: 3929 epochs, accuracy 37.567%, kappa 0.073438, macro F1 0.305757
+  confusion matrix: rows truth, columns predicted, Wake/Light/Deep/REM
+    381 250 0 124
+    563 828 16 723
+    23 236 22 88
+    160 270 0 245
+  class      epochs    recall precision      F1
+  Wake          755     50.5%     33.8%   0.405
+  Light        2130     38.9%     52.3%   0.446
+  Deep          369      6.0%     57.9%   0.108
+  REM           675     36.3%     20.8%   0.264
+
+
+four classes, abstentions scored as Light: 4067 epochs, accuracy 38.382%, kappa 0.074080, macro F1 0.307748
+  confusion matrix: rows truth, columns predicted, Wake/Light/Deep/REM
+    381 280 0 124
+    563 913 16 723
+    23 239 22 88
+    160 290 0 245
+  class      epochs    recall precision      F1
+  Wake          785     48.5%     33.8%   0.399
+  Light        2215     41.2%     53.0%   0.464
+  Deep          372      5.9%     57.9%   0.107
+  REM           695     35.3%     20.8%   0.261
+
+
+three classes, abstentions excluded: 3929 epochs, accuracy 43.981%, kappa 0.111803, macro F1 0.401287
+  confusion matrix: rows truth, columns predicted, Wake/NREM/unused/REM
+    381 250 0 124
+    586 1102 0 811
+    0 0 0 0
+    160 270 0 245
+  class      epochs    recall precision      F1
+  Wake          755     50.5%     33.8%   0.405
+  NREM         2499     44.1%     67.9%   0.535
+  REM           675     36.3%     20.8%   0.264
+
+
+three classes, abstentions scored as Light: 4067 epochs, accuracy 44.652%, kappa 0.109677, macro F1 0.402458
+  confusion matrix: rows truth, columns predicted, Wake/NREM/unused/REM
+    381 280 0 124
+    586 1190 0 811
+    0 0 0 0
+    160 290 0 245
+  class      epochs    recall precision      F1
+  Wake          785     48.5%     33.8%   0.399
+  NREM         2587     46.0%     67.6%   0.548
+  REM           695     35.3%     20.8%   0.261
+
+
+sleep vs wake, abstentions excluded: 3929 epochs, accuracy 71.494%, kappa 0.226983, macro F1 0.608736
+  confusion matrix: rows truth, columns predicted, Wake/Sleep/unused/unused
+    381 374 0 0
+    746 2428 0 0
+    0 0 0 0
+    0 0 0 0
+  class      epochs    recall precision      F1
+  Wake          755     50.5%     33.8%   0.405
+  Sleep        3174     76.5%     86.7%   0.813
+
+
+sleep vs wake, abstentions scored as Light: 4067 epochs, accuracy 71.724%, kappa 0.221363, macro F1 0.606854
+  confusion matrix: rows truth, columns predicted, Wake/Sleep/unused/unused
+    381 404 0 0
+    746 2536 0 0
+    0 0 0 0
+    0 0 0 0
+  class      epochs    recall precision      F1
+  Wake          785     48.5%     33.8%   0.399
+  Sleep        3282     77.3%     86.3%   0.815
+
+
+reference points: all valid labels, compare with the closed-set view
+  baseline: always Light             accuracy  54.5%  kappa  0.000
+  baseline: cohort majority          accuracy  54.5%  kappa  0.000
+  baseline: time of night only       accuracy  50.3%  kappa  0.086
+
+participants below 50% agreement
+  ucddb025              33.8% of 634 epochs
+  ucddb028              34.4% of 712 epochs
+  ucddb026              38.3% of 836 epochs
+  ucddb027              38.6% of 865 epochs
+  ucddb024              41.2% of 882 epochs
+
+candidate on untouched test:
+5 nights, 5 participants, 3929 scored epochs, 138 abstentions
+pooled coverage 96.6%; mean per-night coverage 96.4%; mean per-night accuracy 36.3%
+participant-bootstrap 95% interval for accuracy: 34.1% to 39.0%
+participant-bootstrap 95% interval for kappa: 0.031 to 0.117
+
+four classes, abstentions excluded: 3929 epochs, accuracy 36.651%, kappa 0.068340, macro F1 0.301045
+  confusion matrix: rows truth, columns predicted, Wake/Light/Deep/REM
+    383 236 0 136
+    576 786 16 752
+    20 232 22 95
+    162 264 0 249
+  class      epochs    recall precision      F1
+  Wake          755     50.7%     33.6%   0.404
+  Light        2130     36.9%     51.8%   0.431
+  Deep          369      6.0%     57.9%   0.108
+  REM           675     36.9%     20.2%   0.261
+
+
+four classes, abstentions scored as Light: 4067 epochs, accuracy 37.497%, kappa 0.069156, macro F1 0.303370
+  confusion matrix: rows truth, columns predicted, Wake/Light/Deep/REM
+    383 266 0 136
+    576 871 16 752
+    20 235 22 95
+    162 284 0 249
+  class      epochs    recall precision      F1
+  Wake          785     48.8%     33.6%   0.398
+  Light        2215     39.3%     52.6%   0.450
+  Deep          372      5.9%     57.9%   0.107
+  REM           695     35.8%     20.2%   0.258
+
+
+three classes, abstentions excluded: 3929 epochs, accuracy 42.963%, kappa 0.106605, macro F1 0.395330
+  confusion matrix: rows truth, columns predicted, Wake/NREM/unused/REM
+    383 236 0 136
+    596 1056 0 847
+    0 0 0 0
+    162 264 0 249
+  class      epochs    recall precision      F1
+  Wake          755     50.7%     33.6%   0.404
+  NREM         2499     42.3%     67.9%   0.521
+  REM           675     36.9%     20.2%   0.261
+
+
+three classes, abstentions scored as Light: 4067 epochs, accuracy 43.669%, kappa 0.104619, macro F1 0.396868
+  confusion matrix: rows truth, columns predicted, Wake/NREM/unused/REM
+    383 266 0 136
+    596 1144 0 847
+    0 0 0 0
+    162 284 0 249
+  class      epochs    recall precision      F1
+  Wake          785     48.8%     33.6%   0.398
+  NREM         2587     44.2%     67.5%   0.534
+  REM           695     35.8%     20.2%   0.258
+
+
+sleep vs wake, abstentions excluded: 3929 epochs, accuracy 71.240%, kappa 0.224694, macro F1 0.607237
+  confusion matrix: rows truth, columns predicted, Wake/Sleep/unused/unused
+    383 372 0 0
+    758 2416 0 0
+    0 0 0 0
+    0 0 0 0
+  class      epochs    recall precision      F1
+  Wake          755     50.7%     33.6%   0.404
+  Sleep        3174     76.1%     86.7%   0.810
+
+
+sleep vs wake, abstentions scored as Light: 4067 epochs, accuracy 71.478%, kappa 0.219137, macro F1 0.605430
+  confusion matrix: rows truth, columns predicted, Wake/Sleep/unused/unused
+    383 402 0 0
+    758 2524 0 0
+    0 0 0 0
+    0 0 0 0
+  class      epochs    recall precision      F1
+  Wake          785     48.8%     33.6%   0.398
+  Sleep        3282     76.9%     86.3%   0.813
+
+
+reference points: all valid labels, compare with the closed-set view
+  baseline: always Light             accuracy  54.5%  kappa  0.000
+  baseline: cohort majority          accuracy  54.5%  kappa  0.000
+  baseline: time of night only       accuracy  50.3%  kappa  0.086
+
+participants below 50% agreement
+  ucddb025              32.8% of 634 epochs
+  ucddb028              33.6% of 712 epochs
+  ucddb027              36.9% of 865 epochs
+  ucddb026              37.4% of 836 epochs
+  ucddb024              40.9% of 882 epochs
+
+selection adjustments (2):
+emission_scale x1.3
+rem_irregular x1.25
+
+candidate parameters before test decision:
+Params {
+    emission_scale: 5.2,
+    wake_interval_cv: (
+        0.1,
+        0.3,
+    ),
+    wake_volume_cv: (
+        0.14,
+        0.4,
+    ),
+    wake_duty_cv: (
+        0.12,
+        0.32,
+    ),
+    wake_rate: (
+        17.0,
+        24.0,
+    ),
+    wake_irregular: 1.0,
+    wake_fast: 0.12,
+    wake_sigh: 0.16,
+    wake_arousal: 0.3,
+    onset_minutes: 8.0,
+    onset_weight: 1.1,
+    wake_boundary: 0.1,
+    wake_ventilation_discount: (
+        1.1,
+        1.45,
+    ),
+    wake_threshold: 0.5,
+    deep_regularity: 0.7,
+    deep_round_breath: 0.18,
+    deep_rank_prior: 0.3,
+    deep_interval_cap: 0.09,
+    deep_volume_cap: 0.11,
+    deep_long_interval_cap: 0.13,
+    deep_long_volume_cap: 0.18,
+    deep_long_ventilation_cap: 0.22,
+    deep_long_duty_cap: 0.2,
+    deep_duty: (
+        0.2,
+        0.7,
+    ),
+    deep_rate: (
+        5.0,
+        26.0,
+    ),
+    deep_squareness: 0.95,
+    deep_contrast: 3.0,
+    deep_threshold: 0.55,
+    rem_hypoventilation: 0.42,
+    rem_ventilation: (
+        0.98,
+        0.72,
+    ),
+    rem_irregular: 0.42500000000000004,
+    rem_effort_spread: 0.16,
+    rem_peak_cv: (
+        0.1,
+        0.4,
+    ),
+    rem_interval_cv: (
+        0.05,
+        0.17,
+    ),
+    rem_volume_cv: (
+        0.07,
+        0.24,
+    ),
+    rem_slow: 0.26,
+    rem_slow_full: 0.26,
+    rem_sustained: 0.22,
+    rem_sustained_cv: 0.1,
+    rem_interval_cap: 0.62,
+    rem_volume_cap: 0.95,
+    rem_wake_conflict: 0.85,
+    rem_flow_limitation: 0.3,
+    rem_progress: 0.1,
+    rem_threshold: 0.3,
+    usable_flow: 0.5,
+    usable_coverage: 0.35,
+    usable_breaths: 6,
+    noise_limit: 0.18,
+    leak_limit: 24.0,
+    expected_bout: [
+        5.0,
+        11.0,
+        8.0,
+        18.0,
+        4.0,
+    ],
+    leave_cost: [
+        1.4,
+        1.6,
+        2.0,
+        2.2,
+        0.9,
+    ],
+    enter_cost: [
+        1.3,
+        0.7,
+        1.8,
+        1.9,
+        1.1,
+    ],
+}
+
+accepted on untouched test: false
+final parameters (defaults if rejected):
+Params {
+    emission_scale: 4.0,
+    wake_interval_cv: (
+        0.1,
+        0.3,
+    ),
+    wake_volume_cv: (
+        0.14,
+        0.4,
+    ),
+    wake_duty_cv: (
+        0.12,
+        0.32,
+    ),
+    wake_rate: (
+        17.0,
+        24.0,
+    ),
+    wake_irregular: 1.0,
+    wake_fast: 0.12,
+    wake_sigh: 0.16,
+    wake_arousal: 0.3,
+    onset_minutes: 8.0,
+    onset_weight: 1.1,
+    wake_boundary: 0.1,
+    wake_ventilation_discount: (
+        1.1,
+        1.45,
+    ),
+    wake_threshold: 0.5,
+    deep_regularity: 0.7,
+    deep_round_breath: 0.18,
+    deep_rank_prior: 0.3,
+    deep_interval_cap: 0.09,
+    deep_volume_cap: 0.11,
+    deep_long_interval_cap: 0.13,
+    deep_long_volume_cap: 0.18,
+    deep_long_ventilation_cap: 0.22,
+    deep_long_duty_cap: 0.2,
+    deep_duty: (
+        0.2,
+        0.7,
+    ),
+    deep_rate: (
+        5.0,
+        26.0,
+    ),
+    deep_squareness: 0.95,
+    deep_contrast: 3.0,
+    deep_threshold: 0.55,
+    rem_hypoventilation: 0.42,
+    rem_ventilation: (
+        0.98,
+        0.72,
+    ),
+    rem_irregular: 0.34,
+    rem_effort_spread: 0.16,
+    rem_peak_cv: (
+        0.1,
+        0.4,
+    ),
+    rem_interval_cv: (
+        0.05,
+        0.17,
+    ),
+    rem_volume_cv: (
+        0.07,
+        0.24,
+    ),
+    rem_slow: 0.26,
+    rem_slow_full: 0.26,
+    rem_sustained: 0.22,
+    rem_sustained_cv: 0.1,
+    rem_interval_cap: 0.62,
+    rem_volume_cap: 0.95,
+    rem_wake_conflict: 0.85,
+    rem_flow_limitation: 0.3,
+    rem_progress: 0.1,
+    rem_threshold: 0.3,
+    usable_flow: 0.5,
+    usable_coverage: 0.35,
+    usable_breaths: 6,
+    noise_limit: 0.18,
+    leak_limit: 24.0,
+    expected_bout: [
+        5.0,
+        11.0,
+        8.0,
+        18.0,
+        4.0,
+    ],
+    leave_cost: [
+        1.4,
+        1.6,
+        2.0,
+        2.2,
+        0.9,
+    ],
+    enter_cost: [
+        1.3,
+        0.7,
+        1.8,
+        1.9,
+        1.1,
+    ],
+}

@@ -55,13 +55,8 @@ export function Icon({ name, className, title }: { name: IconName | string; clas
   );
 }
 
-export function Logo({ size = 30 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <circle cx="16" cy="16" r="13" fill="none" stroke="var(--accent)" strokeWidth="3" />
-      <path d="M7 17h4l2.5-5 4 9 2.5-4H25" fill="none" stroke="var(--accent)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+export function Logo({ size = 34 }: { size?: number }) {
+  return <img className="mascot" src="./sleeplens-owl.png" width={size} height={size} alt="" aria-hidden="true" />;
 }
 
 /** Event marker shapes (shape + colour, so colour is never the only cue). */

@@ -1,8 +1,8 @@
-import { useEffect, useState, type DragEvent } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { CardCandidate, ImportProgress, ImportResult } from "../api/types";
 import type { Go } from "../App";
-import { Icon } from "../components/Icon";
+import { Icon, Logo } from "../components/Icon";
 import { useData, errorText } from "../lib/data";
 import type { MonthStatus } from "../lib/importMonths";
 import "../score-import.css";
@@ -63,20 +63,8 @@ export function ImportScreen({ go }: { go: Go }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const dropProps = api.kind === "mock"
-    ? {
-        onDragOver: (e: DragEvent) => { e.preventDefault(); setOver(true); },
-        onDragLeave: () => setOver(false),
-        onDrop: (e: DragEvent) => {
-          e.preventDefault();
-          setOver(false);
-          const name = e.dataTransfer.files[0]?.name ?? "NO NAME";
-          start(`/Volumes/${name}`, name);
-        }
-      }
-    : {};
-
-  const card = cards[0];
+  const sample = api.kind === "mock";
+  const card = sample ? undefined : cards[0];
   const progress = imp.progress;
   const activeCandidate = cards.find(candidate => candidate.label === imp.source || candidate.path === imp.source);
   const months = [...new Set([...(activeCandidate?.months ?? []), ...Object.keys(imp.months)])].sort();
@@ -101,19 +89,19 @@ export function ImportScreen({ go }: { go: Go }) {
     <div className="import-wrap">
       <section className="lead" aria-labelledby="h-import">
         <div className="import-head">
-          <h1 id="h-import">{isFirst ? "Understand your CPAP data" : "Import a card"}</h1>
-          <p className="sub">Choose your SD card. Your data is copied to this computer and never leaves it.</p>
+          <h1 id="h-import">{sample ? "Explore SleepLens" : isFirst ? "Understand your CPAP data" : "Import a card"}</h1>
+          <p className="sub">{sample ? "Try the current desktop interface with made-up nights. This preview does not read your files." : "Choose your SD card. Your data is copied to this computer and stays here."}</p>
         </div>
 
         {imp.phase === "idle" ? (
           <>
-            <div className={`drop${over ? " over" : ""}`} {...dropProps}>
-              <Icon name="card" className="big" />
-              <h2>{over ? "Drop to read the card" : "Drag your SD card or its folder onto this window"}</h2>
-              <p>SleepLens reads the card, copies what it needs and leaves the card unchanged. Importing again later only reads new nights.</p>
+            <div className={`drop${over ? " over" : ""}`}>
+              <Logo size={84} />
+              <h2>{sample ? "Get to know your nights" : over ? "Drop to read the card" : "Drag your SD card or its folder onto this window"}</h2>
+              <p>{sample ? "Load the sample nights to explore summaries, charts and trends. Use the desktop app when you are ready to import a supported card." : "SleepLens reads your card without changing it. Later imports skip unchanged night files."}</p>
               <div className="actions">
-                <button className="btn primary" type="button" onClick={choose}><Icon name="folder" />Choose SD card…</button>
-                <button className="btn link" type="button" onClick={() => start(null, "sample data")}>Try with sample data</button>
+                {!sample ? <button className="btn primary" type="button" onClick={choose}><Icon name="folder" />Choose SD card…</button> : null}
+                <button className={`btn ${sample ? "primary" : "link"}`} type="button" onClick={() => start(null, "sample data")}>Try with sample data</button>
               </div>
             </div>
             {card ? (
@@ -149,7 +137,7 @@ export function ImportScreen({ go }: { go: Go }) {
                 return (
                   <li key={s.phase} className={state}>
                     <Icon name={state === "ok" ? "check" : state === "now" ? "dot" : "none"} />
-                    {s.label}{state === "ok" ? " · done" : ""}
+                    {sample ? ["Preparing sample data", "Loading sample summaries", "Loading sample nights"][i] : s.label}{state === "ok" ? " · done" : ""}
                   </li>
                 );
               })}
@@ -163,7 +151,7 @@ export function ImportScreen({ go }: { go: Go }) {
 
       <aside className="aside" aria-label="About importing">
         <section className="card" aria-labelledby="h-machines">
-          <div className="card-h"><h2 id="h-machines">Supported machines</h2></div>
+          <div className="card-h"><h2 id="h-machines">Desktop card support</h2></div>
           <ul className="machines">
             <li className="yes"><Icon name="good" /><span><b>Aeonmed AS100A</b> (cards with an <code>AS2X</code> folder)</span></li>
             <li className="later"><Icon name="none" /><span>ResMed AirSense 10 and 11 · planned</span></li>
@@ -171,10 +159,10 @@ export function ImportScreen({ go }: { go: Go }) {
           </ul>
         </section>
         <section className="card" aria-labelledby="h-private">
-          <div className="card-h"><h2 id="h-private">Private by design</h2></div>
+          <div className="card-h"><h2 id="h-private">{sample ? "About this preview" : "Your data stays here"}</h2></div>
           <ul className="notes">
-            <li className="note"><Icon name="info" /><span>No account, no internet connection. Nothing is uploaded.</span></li>
-            <li className="note"><Icon name="info" /><span>Your nights are kept in one file on this computer. You can see it or delete it in Settings.</span></li>
+            <li className="note"><Icon name="info" /><span>{sample ? "The preview runs in your browser with synthetic data. No account or upload is needed." : "No account, cloud upload or analytics."}</span></li>
+            <li className="note"><Icon name="info" /><span>{sample ? "Build the macOS app to read a real card. Windows and more machine families are planned." : "Imported nights stay in a local database. Settings shows its location and lets you delete it."}</span></li>
           </ul>
         </section>
       </aside>
@@ -203,6 +191,7 @@ function Result({ result, first, go, onAgain }: { result: ImportResult; first: b
     );
   }
   const failed = result.nightsFailed;
+  const sample = api.kind === "mock";
   const figs = [
     { n: result.nightsAdded, l: "new nights" },
     { n: result.nightsUpdated, l: "updated" },
@@ -210,8 +199,8 @@ function Result({ result, first, go, onAgain }: { result: ImportResult; first: b
   ].filter((f) => f.n > 0);
   return (
     <section className="card import-card" aria-labelledby="h-res">
-      <div className="card-h"><h2 id="h-res">Done. Your nights are on this computer.</h2></div>
-      <p className="banner info"><Icon name="good" /><span><b>You can put the card back in your machine.</b> SleepLens does not need it any more.</span></p>
+      <div className="card-h"><h2 id="h-res">{sample ? "The sample nights are ready" : "Done. Your nights are on this computer."}</h2></div>
+      <p className="banner info"><Icon name="good" /><span>{sample ? "These are synthetic nights. No card or personal files were read." : <><b>You can put the card back in your machine.</b> SleepLens does not need it any more.</>}</span></p>
       {figs.length ? (
         <div className="result-figs">
           {figs.map((f) => <div key={f.l}><b>{f.n}</b><span>{f.l}</span></div>)}
@@ -228,7 +217,7 @@ function Result({ result, first, go, onAgain }: { result: ImportResult; first: b
       ) : null}
       <div className="row-actions">
         <button className="btn primary" type="button" onClick={() => go({ screen: "overview" })}>See last night</button>
-        <button className="btn" type="button" onClick={onAgain}>Import another card</button>
+        <button className="btn" type="button" onClick={onAgain}>{sample ? "Load sample data again" : "Import another card"}</button>
       </div>
     </section>
   );

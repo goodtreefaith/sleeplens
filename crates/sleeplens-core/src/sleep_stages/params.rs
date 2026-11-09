@@ -86,8 +86,8 @@ pub struct Params {
     pub deep_duty: (f64, f64),
     /// Accepted breathing-rate range for Deep.
     pub deep_rate: (f64, f64),
-    /// Minimum mid-inspiratory squareness for Deep: a flat-topped contour is
-    /// flow limitation, not quiet sleep.
+    /// Maximum mid-inspiratory squareness for Deep: larger values indicate a
+    /// flat-topped contour rather than a rounded breath.
     pub deep_squareness: f64,
     /// How much contrast in regularity a night must show before any of it can be
     /// called Deep: the ratio between the night's most irregular decile and its
@@ -187,7 +187,7 @@ impl Default for Params {
             deep_long_duty_cap: 0.20,
             deep_duty: (0.20, 0.70),
             deep_rate: (5.0, 26.0),
-            deep_squareness: 0.90,
+            deep_squareness: 0.95,
             deep_contrast: 3.0,
             deep_threshold: 0.55,
 
@@ -325,11 +325,15 @@ mod tests {
 
     #[test]
     fn validation_rejects_incoherent_thresholds() {
-        let mut p = Params::default();
-        p.wake_threshold = 0.0;
+        let p = Params {
+            wake_threshold: 0.0,
+            ..Params::default()
+        };
         assert!(p.validate().is_err());
-        let mut p = Params::default();
-        p.emission_scale = 100.0;
+        let p = Params {
+            emission_scale: 100.0,
+            ..Params::default()
+        };
         assert!(p.validate().is_err());
     }
 }

@@ -10,3 +10,7 @@ describe("Trends range navigation", () => {
     expect(parseHash("#trends/not-a-date?period=unknown")).toEqual({ screen: "trends" });
   });
 });
+
+it("opens the optional rhythm screen without requiring therapy data", () => {
+  expect(parseHash(toHash({ screen: "rhythm" }))).toEqual({ screen: "rhythm" });
+});

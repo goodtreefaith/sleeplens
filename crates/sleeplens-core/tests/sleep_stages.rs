@@ -416,11 +416,11 @@ fn gaps_stay_no_data_and_partial_epochs_count_only_observed_time() {
 fn version_four_serializes_uncertainty_evidence_and_confounders() {
     let flow = breathing(10, |_| (4.0, 0.05, 22.0, 0.05, 0.0));
     let result = estimate(&flow, &[]);
-    assert_eq!(ESTIMATOR_VERSION, 4);
-    assert_eq!(result.estimator_version, 4);
+    assert_eq!(ESTIMATOR_VERSION, 5);
+    assert_eq!(result.estimator_version, 5);
     assert_eq!(result, estimate(&flow, &[]));
     let value = serde_json::to_value(&result).unwrap();
-    assert_eq!(value["estimatorVersion"], 4);
+    assert_eq!(value["estimatorVersion"], 5);
     // Version 4 adds the machine-readable uncertainty reasons and the periodic
     // breathing flag, so a UI can explain a gap instead of only showing one.
     assert!(value["uncertainRuns"].is_array());

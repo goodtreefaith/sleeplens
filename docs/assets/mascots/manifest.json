@@ -1,0 +1,66 @@
+[
+  {
+    "name": "rest",
+    "source": "owl-rest-source.png",
+    "webAsset": "../../../app/public/mascots/owl-rest.png",
+    "tool": "built-in imagegen",
+    "date": "2026-11-09",
+    "prompt": "Use case: identity-preserve\nAsset type: SleepLens mascot expression \"rest\" for a sleep-score card.\nInput image role: accepted sleepy owl mascot edit target.\nChange only the expression and small wing pose: Lowest score: tired with softly drooping eyelids, relaxed posture and a kind reassuring expression. No tears, sadness, illness or distress.\nPreserve exactly the reference owl identity: same squat rounded silhouette and proportions, deep-teal body, off-white heart-shaped face, pale-teal circular lens around its right eye, pale-teal belly, tiny orange beak, dark feet, same flat illustrated style. Expression through eyes and posture, no human mouth if it changes the owl's beak anatomy. Both feet and ears visible. A single owl centered on a square transparent canvas,10%clear padding.\nConstraints: genuine transparent alpha; no text,numbers,background,shadow,accessories,stars,medical equipment or other characters. No gradient glow. This is the same brand character in a new state, not a redesign."
+  },
+  {
+    "name": "gentle",
+    "source": "owl-gentle-source.png",
+    "webAsset": "../../../app/public/mascots/owl-gentle.png",
+    "tool": "built-in imagegen",
+    "date": "2026-11-09",
+    "prompt": "Use case: identity-preserve\nAsset type: SleepLens mascot expression \"gentle\" for a sleep-score card.\nInput image role: accepted sleepy owl mascot edit target.\nChange only the expression and small wing pose: Lower score: one small reassuring smile, half-open sleepy eyes, one wing gently lifted in a comforting greeting.\nPreserve exactly the reference owl identity: same squat rounded silhouette and proportions, deep-teal body, off-white heart-shaped face, pale-teal circular lens around its right eye, pale-teal belly, tiny orange beak, dark feet, same flat illustrated style. Expression through eyes and posture, no human mouth if it changes the owl's beak anatomy. Both feet and ears visible. A single owl centered on a square transparent canvas,10%clear padding.\nConstraints: genuine transparent alpha; no text,numbers,background,shadow,accessories,stars,medical equipment or other characters. No gradient glow. This is the same brand character in a new state, not a redesign."
+  },
+  {
+    "name": "steady",
+    "source": "owl-steady-source.png",
+    "webAsset": "../../../app/public/mascots/owl-steady.png",
+    "tool": "built-in imagegen",
+    "date": "2026-11-09",
+    "prompt": "Use case: identity-preserve\nAsset type: SleepLens mascot expression \"steady\" for a sleep-score card.\nInput image role: accepted sleepy owl mascot edit target.\nChange only the expression and small wing pose: Middle score: calm and hopeful, eyes softly open, relaxed upright stance, small pleased smile.\nPreserve exactly the reference owl identity: same squat rounded silhouette and proportions, deep-teal body, off-white heart-shaped face, pale-teal circular lens around its right eye, pale-teal belly, tiny orange beak, dark feet, same flat illustrated style. Expression through eyes and posture, no human mouth if it changes the owl's beak anatomy. Both feet and ears visible. A single owl centered on a square transparent canvas,10%clear padding.\nConstraints: genuine transparent alpha; no text,numbers,background,shadow,accessories,stars,medical equipment or other characters. No gradient glow. This is the same brand character in a new state, not a redesign."
+  },
+  {
+    "name": "bright",
+    "source": "owl-bright-source.png",
+    "webAsset": "../../../app/public/mascots/owl-bright.png",
+    "tool": "built-in imagegen",
+    "date": "2026-11-09",
+    "prompt": "Use case: identity-preserve\nAsset type: SleepLens mascot expression \"bright\" for a sleep-score card.\nInput image role: accepted sleepy owl mascot edit target.\nChange only the expression and small wing pose: Good score: alert and pleased, bright open eyes, subtle smile, wings resting comfortably.\nPreserve exactly the reference owl identity: same squat rounded silhouette and proportions, deep-teal body, off-white heart-shaped face, pale-teal circular lens around its right eye, pale-teal belly, tiny orange beak, dark feet, same flat illustrated style. Expression through eyes and posture, no human mouth if it changes the owl's beak anatomy. Both feet and ears visible. A single owl centered on a square transparent canvas,10%clear padding.\nConstraints: genuine transparent alpha; no text,numbers,background,shadow,accessories,stars,medical equipment or other characters. No gradient glow. This is the same brand character in a new state, not a redesign."
+  },
+  {
+    "name": "curious",
+    "source": "owl-curious-source.png",
+    "webAsset": "../../../app/public/mascots/owl-curious.png",
+    "tool": "built-in imagegen",
+    "date": "2026-11-09",
+    "prompt": "Use case: identity-preserve\nAsset type: SleepLens mascot expression \"curious\" for a sleep-score card.\nInput image role: accepted sleepy owl mascot edit target.\nChange only the expression and small wing pose: No score yet: gently curious, both eyes softly open, tiny friendly smile, wings relaxed.\nPreserve exactly the reference owl identity: same squat rounded silhouette and proportions, deep-teal body, off-white heart-shaped face, pale-teal circular lens around its right eye, pale-teal belly, tiny orange beak, dark feet, same flat illustrated style. Expression through eyes and posture, no human mouth if it changes the owl's beak anatomy. Both feet and ears visible. A single owl centered on a square transparent canvas,10%clear padding.\nConstraints: genuine transparent alpha; no text,numbers,background,shadow,accessories,stars,medical equipment or other characters. No gradient glow. This is the same brand character in a new state, not a redesign."
+  },
+  {
+    "name": "happy",
+    "source": "owl-happy-source.png",
+    "webAsset": "../../../app/public/mascots/owl-happy.png",
+    "tool": "built-in imagegen",
+    "date": "2026-11-09",
+    "prompt": "Use case: identity-preserve\nAsset type: SleepLens mascot expression \"happy\" for a sleep-score card.\nInput image role: accepted sleepy owl mascot edit target.\nChange only the expression and small wing pose: High score: joyful curved smiling eyes, broad friendly smile, one wing raised with quiet pride.\nPreserve exactly the reference owl identity: same squat rounded silhouette and proportions, deep-teal body, off-white heart-shaped face, pale-teal circular lens around its right eye, pale-teal belly, tiny orange beak, dark feet, same flat illustrated style. Expression through eyes and posture, no human mouth if it changes the owl's beak anatomy. Both feet and ears visible. A single owl centered on a square transparent canvas,10%clear padding.\nConstraints: genuine transparent alpha; no text,numbers,background,shadow,accessories,stars,medical equipment or other characters. No gradient glow. This is the same brand character in a new state, not a redesign."
+  },
+  {
+    "name": "celebrate",
+    "source": "owl-celebrate-source.png",
+    "webAsset": "../../../app/public/mascots/owl-celebrate.png",
+    "tool": "built-in imagegen",
+    "date": "2026-11-09",
+    "prompt": "Use case: identity-preserve\nAsset type: SleepLens mascot expression \"celebrate\" for a sleep-score card.\nInput image role: accepted sleepy owl mascot edit target.\nChange only the expression and small wing pose: Highest score: delighted curved smiling eyes, both wings slightly out in a little cheer. Keep it restrained, no confetti or props.\nPreserve exactly the reference owl identity: same squat rounded silhouette and proportions, deep-teal body, off-white heart-shaped face, pale-teal circular lens around its right eye, pale-teal belly, tiny orange beak, dark feet, same flat illustrated style. Expression through eyes and posture, no human mouth if it changes the owl's beak anatomy. Both feet and ears visible. A single owl centered on a square transparent canvas,10%clear padding.\nConstraints: genuine transparent alpha; no text,numbers,background,shadow,accessories,stars,medical equipment or other characters. No gradient glow. This is the same brand character in a new state, not a redesign."
+  },
+  {
+    "name": "rhythm-fox",
+    "source": "rhythm-fox-source.png",
+    "webAsset": "../../../app/public/mascots/rhythm-fox.png",
+    "tool": "built-in imagegen",
+    "date": "2026-11-09",
+    "prompt": "Use case: logo-brand\nAsset type: SleepLens chronotype companion mascot.\nInput image role: style reference only, SleepLens owl; create a different character.\nPrimary request: Create a friendly small fox as a companion to the SleepLens owl, representing a person's daily rhythm and preferred focus hours. Use the same rounded, simple flat illustration style and proportions. Fox has a warm muted apricot body, off-white cheek/chest shapes, charcoal eyes and nose, small deep-teal details, upright triangular ears and a large rounded curled tail with an off-white tip. One tiny pale-teal circular lens detail around its right eye subtly connects the brand family. Calm alert expression, softly open eyes, relaxed pose, suitable for adult users. It must be unmistakably a fox, not another owl.\nComposition: single complete character centered on square genuine transparent canvas,10%clear margins,no background. Preserve small-icon readability.\nConstraints: no words,numbers,medical symbols,clocks,productivity percentages,accessories,shadows or extra characters. No 3D or photorealism. This character is decorative and must not imply scientific diagnosis."
+  }
+]

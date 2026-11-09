@@ -1,4 +1,5 @@
 use serde_json::Value;
+use sleeplens_core::sleep_stages::ESTIMATOR_VERSION;
 use std::{path::Path, process::Command};
 
 fn inspect(args: &[&str]) -> String {
@@ -33,7 +34,7 @@ fn fixture_json_keeps_legacy_fields_and_adds_v2_2_details() {
         assert!(night["excessLeakP95"].is_number());
         assert!(night["interruptions"].is_number());
         assert_eq!(night["stages"]["epochSeconds"], 30);
-        assert_eq!(night["stages"]["estimatorVersion"], 4);
+        assert_eq!(night["stages"]["estimatorVersion"], ESTIMATOR_VERSION);
         assert!(night["stages"]["minutes"]["uncertain"].is_number());
         assert_eq!(night["stages"]["confidence"]["rem"], "low");
         assert!(!night["stages"]["stages"].as_array().unwrap().is_empty());

@@ -16,9 +16,9 @@
 //!   confusion matrix, and coverage is reported alongside. This says "of what it
 //!   was willing to score, how often was it right" and cannot be inflated by
 //!   abstaining on everything only if coverage is read with it.
-//! * **Closed-set view**: uncertain epochs are forced to `Light`, the harmless
-//!   default, and every epoch counts. This says "how right is the output a user
-//!   would actually see".
+//! * **Closed-set view**: uncertain epochs are forced to `Light` for a fixed evaluation
+//!   fallback, and every labelled epoch counts. This is a sensitivity analysis,
+//!   not the displayed app output: the app keeps Uncertain visible.
 //!
 //! Both are computed and reported together. Reporting either alone would be
 //! misleading.
@@ -59,9 +59,9 @@ pub fn kappa(matrix: &[[usize; 4]; 4]) -> f64 {
     }
     let mut observed = 0usize;
     let mut expected = 0.0;
-    for i in 0..4 {
-        observed += matrix[i][i];
-        let row: usize = matrix[i].iter().sum();
+    for (i, values) in matrix.iter().enumerate() {
+        observed += values[i];
+        let row: usize = values.iter().sum();
         let column: usize = (0..4).map(|j| matrix[j][i]).sum();
         expected += row as f64 * column as f64;
     }
@@ -199,13 +199,27 @@ impl Report {
         let mut out = String::new();
         let _ = writeln!(
             out,
-            "{}: {} epochs, accuracy {:.1}%, kappa {:.3}, macro F1 {:.3}",
+            "{}: {} epochs, accuracy {:.3}%, kappa {:.6}, macro F1 {:.6}",
             self.name,
             self.epochs,
             self.accuracy * 100.0,
             self.kappa,
             self.macro_f1
         );
+        let order = if self.name.starts_with("three classes") {
+            "Wake/NREM/unused/REM"
+        } else if self.name.starts_with("sleep vs wake") {
+            "Wake/Sleep/unused/unused"
+        } else {
+            "Wake/Light/Deep/REM"
+        };
+        let _ = writeln!(
+            out,
+            "  confusion matrix: rows truth, columns predicted, {order}"
+        );
+        for row in &self.matrix {
+            let _ = writeln!(out, "    {} {} {} {}", row[0], row[1], row[2], row[3]);
+        }
         let _ = writeln!(
             out,
             "  {:<8} {:>8} {:>9} {:>9} {:>7}",
@@ -218,7 +232,13 @@ impl Report {
             let _ = writeln!(
                 out,
                 "  {:<8} {:>8} {:>8.1}% {:>8.1}% {:>7.3}",
-                class_name(CLASSES[i]),
+                if i == 1 && self.name.starts_with("three classes") {
+                    "NREM"
+                } else if i == 1 && self.name.starts_with("sleep vs wake") {
+                    "Sleep"
+                } else {
+                    class_name(CLASSES[i])
+                },
                 class.truth,
                 class.recall * 100.0,
                 class.precision * 100.0,
@@ -428,8 +448,8 @@ pub fn accuracy_of(nights: &[&NightOutcome]) -> f64 {
 pub enum Baseline {
     /// Predict Light everywhere.
     AlwaysLight,
-    /// Predict the most common class in the labels, which is nearly always Light.
-    Majority,
+    /// Predict the supplied most common class in the evaluated cohort.
+    Majority(StageLabel),
     /// Predict Wake for the first quarter of the night, then Light.
     TimeOnly,
 }
@@ -438,14 +458,15 @@ impl Baseline {
     pub fn name(self) -> &'static str {
         match self {
             Baseline::AlwaysLight => "baseline: always Light",
-            Baseline::Majority => "baseline: majority class",
+            Baseline::Majority(_) => "baseline: cohort majority",
             Baseline::TimeOnly => "baseline: time of night only",
         }
     }
 
     pub fn predict(self, epoch: usize, epochs: usize) -> StageLabel {
         match self {
-            Baseline::AlwaysLight | Baseline::Majority => StageLabel::Light,
+            Baseline::AlwaysLight => StageLabel::Light,
+            Baseline::Majority(class) => class,
             Baseline::TimeOnly => {
                 if epoch * 4 < epochs {
                     StageLabel::Wake
@@ -580,6 +601,10 @@ mod tests {
     #[test]
     fn baselines_are_what_they_say() {
         assert_eq!(Baseline::AlwaysLight.predict(0, 100), StageLabel::Light);
+        assert_eq!(
+            Baseline::Majority(StageLabel::Rem).predict(0, 100),
+            StageLabel::Rem
+        );
         assert_eq!(Baseline::TimeOnly.predict(0, 100), StageLabel::Wake);
         assert_eq!(Baseline::TimeOnly.predict(30, 100), StageLabel::Light);
     }

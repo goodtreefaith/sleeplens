@@ -5,6 +5,8 @@ import { contributorStatus, scoreSegments, type ScoreComponentKey } from "../lib
 import "../score-import.css";
 import { HelpTip } from "./HelpTip";
 import { Icon } from "./Icon";
+import { scoreOwlState } from "../lib/scoreMascot";
+import "../rhythm.css";
 
 export function ScoreBadge({ score, go }: { score: SleepScore | null; go?: Go }) {
   const status = !score ? "none" : score.total >= 70 ? "good" : score.total >= 50 ? "watch" : "talk";
@@ -28,7 +30,8 @@ export function ScoreCard({ score, go, summary, onContributor }: { score: SleepS
         </g>)}</svg>
         <b>{score?.total ?? "–"}<small>/100</small></b>
       </div>
-      <div><h2 id="score-card-title">Sleep score</h2><p className="score-verdict">{score?.label ?? "Score unavailable"}</p><p className="score-estimated">Estimated <HelpTip term="sleepScore" go={go} /></p></div>
+      <div className="score-card-heading"><h2 id="score-card-title">Sleep score</h2><p className="score-verdict">{score?.label ?? "Score unavailable"}</p><p className="score-estimated">Estimated <HelpTip term="sleepScore" go={go} /></p></div>
+      <img className="score-owl" src={`./mascots/owl-${scoreOwlState(score?.total)}.png`} alt="" aria-hidden="true" />
     </div>
     <p className="score-card-summary">{summary}</p>
     <ul className="score-contributor-list">{segments.map(segment => {

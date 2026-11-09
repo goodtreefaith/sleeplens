@@ -3,6 +3,7 @@ import { api } from "../api";
 import type { Go } from "../App";
 import { Icon } from "../components/Icon";
 import { useData, errorText } from "../lib/data";
+import { clearRhythmProfile, readRhythmProfile } from "../lib/rhythm";
 import { bytes, shortDateY, unitLabel } from "../lib/format";
 import type { ThemePref } from "../lib/theme";
 
@@ -14,12 +15,15 @@ export function SettingsScreen({ go, themePref, setThemePref }: { go: Go; themeP
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const d = info?.device;
+  const sample = api.kind === "mock";
+  const hasRhythm = readRhythmProfile(!sample) !== null;
 
   async function del() {
     setBusy(true);
     setErr(null);
     try {
       await api.deleteAllData();
+      clearRhythmProfile(api.kind === "tauri");
       dlg.current?.close();
       setDone(true);
       await refresh();
@@ -38,26 +42,26 @@ export function SettingsScreen({ go, themePref, setThemePref }: { go: Go; themeP
       <div className="settings-grid">
         <div className="stack">
           <section className="card" aria-labelledby="s-data">
-            <div className="card-h"><h2 id="s-data">Your data</h2></div>
-            <p className="quiet">Everything SleepLens copied from your card is kept in this folder on this computer. Nothing is sent anywhere.</p>
-            <code className="path">{info?.dataDir ?? "–"}</code>
+            <div className="card-h"><h2 id="s-data">{sample ? "Sample data" : "Your data"}</h2></div>
+            <p className="quiet">{sample ? "These synthetic nights run in browser memory. This preview cannot read your files or the desktop database." : "Everything SleepLens copied from your card stays in this folder on your computer."}</p>
+            {!sample ? <code className="path">{info?.dataDir ?? "–"}</code> : null}
             <dl className="kv" style={{ marginTop: 14 }}>
-              <dt>Database size</dt><dd>{info ? bytes(info.dbSizeBytes) : "–"}</dd>
+              <dt>{sample ? "Simulated database size" : "Database size"}</dt><dd>{info ? bytes(info.dbSizeBytes) : "–"}</dd>
               <dt>Nights stored</dt><dd>{info?.nightCount ?? 0}</dd>
               <dt>First night</dt><dd>{info?.firstDate ? shortDateY(info.firstDate) : "–"}</dd>
               <dt>Last night</dt><dd>{info?.lastDate ? shortDateY(info.lastDate) : "–"}</dd>
               <dt>Last import</dt><dd>{info?.lastImportAt ? `${shortDateY(info.lastImportAt.slice(0, 10))}, ${info.lastImportAt.slice(11, 16)}` : "–"}</dd>
             </dl>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 }}>
-              <button className="btn" type="button" onClick={() => go({ screen: "import" })}><Icon name="card" />Import a card</button>
+              <button className="btn" type="button" onClick={() => go({ screen: "import" })}><Icon name="card" />{sample ? "Load sample data" : "Import a card"}</button>
             </div>
           </section>
           <section className="card" aria-labelledby="s-del">
-            <div className="card-h"><h2 id="s-del">Delete all data</h2></div>
-            <p className="quiet">Removes every night, setting and the database from this computer. Your SD card is not touched, so you can import it again later.</p>
-            {done ? <p className="banner info" role="status" tabIndex={-1} ref={doneRef} style={{ marginTop: 12 }}><Icon name="good" /><span>All data was deleted from this computer.</span></p> : null}
+            <div className="card-h"><h2 id="s-del">{sample ? "Clear sample data and answers" : "Delete all data"}</h2></div>
+            <p className="quiet">{sample ? "Clear the sample nights and your rhythm answers from this preview. You can load sample nights again from Import." : "Removes imported nights, settings, your rhythm answers and the local database. Your SD card stays unchanged, so you can import it again later."}</p>
+            {done ? <p className="banner info" role="status" tabIndex={-1} ref={doneRef} style={{ marginTop: 12 }}><Icon name="good" /><span>{sample ? "Sample nights and rhythm answers were cleared." : "All data was deleted from this computer."}</span></p> : null}
             <div style={{ marginTop: 16 }}>
-              <button className="btn danger" type="button" disabled={!info || info.nightCount === 0} onClick={() => { setErr(null); dlg.current?.showModal(); }}><Icon name="trash" />Delete all data…</button>
+              <button className="btn danger" type="button" disabled={!info || (info.nightCount === 0 && !hasRhythm)} onClick={() => { setErr(null); dlg.current?.showModal(); }}><Icon name="trash" />{sample ? "Clear sample data…" : "Delete all data…"}</button>
             </div>
           </section>
         </div>
@@ -91,19 +95,19 @@ export function SettingsScreen({ go, themePref, setThemePref }: { go: Go; themeP
           </section>
           <section className="card" aria-labelledby="s-about">
             <div className="card-h"><h2 id="s-about">About</h2></div>
-            <dl className="kv"><dt>Version</dt><dd>{info?.version ?? "–"}</dd><dt>Network access</dt><dd>None</dd></dl>
+            <dl className="kv"><dt>Version</dt><dd>{info?.version ?? "–"}</dd><dt>{sample ? "Mode" : "Network access"}</dt><dd>{sample ? "Browser preview with synthetic data" : "None"}</dd></dl>
             <p className="quiet" style={{ marginTop: 12 }}>SleepLens explains what your machine recorded. It is not medical advice and never suggests changing settings.</p>
           </section>
         </div>
       </div>
 
       <dialog className="confirm" ref={dlg} aria-labelledby="dlg-h">
-        <h2 id="dlg-h">Delete all data from this computer?</h2>
-        <p>This removes {info?.nightCount ?? 0} nights and the database at the folder above. It cannot be undone. Your SD card is not changed.</p>
+        <h2 id="dlg-h">{sample ? "Clear sample nights and rhythm answers?" : "Delete all data from this computer?"}</h2>
+        <p>{sample ? "This clears the sample nights and any rhythm answers from this preview. Load sample nights again from Import to continue exploring." : <>This removes {info?.nightCount ?? 0} nights, your rhythm answers and the database at the folder above. It cannot be undone. Your SD card is not changed.</>}</p>
         {err ? <p className="error-box" role="alert" style={{ marginTop: 12 }}>{err}</p> : null}
         <div className="actions">
-          <button className="btn" type="button" autoFocus onClick={() => dlg.current?.close()}>Keep my data</button>
-          <button className="btn danger" type="button" disabled={busy} onClick={del}>{busy ? "Deleting…" : "Delete all data"}</button>
+          <button className="btn" type="button" autoFocus onClick={() => dlg.current?.close()}>{sample ? "Keep sample data" : "Keep my data"}</button>
+          <button className="btn danger" type="button" disabled={busy} onClick={del}>{busy ? "Clearing…" : sample ? "Clear sample data and answers" : "Delete all data"}</button>
         </div>
       </dialog>
     </section>

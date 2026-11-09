@@ -10,4 +10,4 @@ export function isTauri(): boolean {
 }
 
 /** Tauri IPC inside the app; realistic in-memory mock in a normal browser (`npm run dev`). */
-export const api: SleepLensApi = isTauri() ? createTauriApi() : createMockApi({ persist: true });
+export const api: SleepLensApi = isTauri() ? createTauriApi() : createMockApi({ preloaded: import.meta.env.MODE === "demo" ? true : undefined, persist: true });

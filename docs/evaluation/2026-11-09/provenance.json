@@ -1,0 +1,270 @@
+{
+  "date": "2026-11-09",
+  "baselineCoreCommit": "ccaba79094325f0b6289c7e1e164dd85423deaf2",
+  "baselineEstimatorVersion": 4,
+  "currentEstimatorVersion": 5,
+  "currentSourceState": "uncommitted working tree; identified by SHA-256 below",
+  "profile": "release",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "respirationInverted": false,
+  "inputsSha256": "217f4436a66bdd254c19ee7471edb941abfb5708b8fe16c7219973e69f9b4a59",
+  "officialChecksumAuditsPassed": true,
+  "sleepEdfMatchedHeaderDateAndTimePairs": 153,
+  "sourceSha256": {
+    "crates/sleeplens-core/src/assembly.rs": "71aa15fce05f85e9026f520de5bbd508556d95b94627bcf7ce9acafe9ae08e23",
+    "crates/sleeplens-core/src/bkp.rs": "ca07c36a13b44c050dbe7c328f311a5d0b66a0a22ea84084ebde3f896142c3f6",
+    "crates/sleeplens-core/src/dat.rs": "1bcfb983293773e096d0e85287cd19b9e32a5531e174a8a5a7a1ec13126f6dd5",
+    "crates/sleeplens-core/src/detect.rs": "e302da08aebd7bf836f0149be86941ac3bb0322ffed474362724ea3fa7062264",
+    "crates/sleeplens-core/src/lib.rs": "6b91651e8629742da6e67f118a6b7260acd7a3615bd7448808f9c18a5b76dcbe",
+    "crates/sleeplens-core/src/model.rs": "f9465a1a9988e81e595b208d585e13c19e3fc22e4b245a6059a63ddba17c6312",
+    "crates/sleeplens-core/src/pressure.rs": "35d4e4ef0c44ccdf4b1a596812c6d9d2d7ff7e6fa8e359b1e96e2882a2444b99",
+    "crates/sleeplens-core/src/score.rs": "8ab9ae1be29acf59b5867863fee7ae16c350a4c5e8054db801012d2571ccbcef",
+    "crates/sleeplens-core/src/settings.rs": "846ae48070a2e29191db0cb56ece2bd3a7557d0ef3643c91fc9fce06ae4c93d7",
+    "crates/sleeplens-core/src/sleep_stages/mod.rs": "c52cecd7150c394399ecbdd3e1fa0194a2cb4e82a3d186db56cdc70b1db02989",
+    "crates/sleeplens-core/src/sleep_stages/params.rs": "77f1d144d338df761a7b8a1a45524199dbb16992b154791159643d78efab77d8",
+    "crates/sleeplens-core/src/sleep_stages/signal.rs": "7f10aacc870c75170e19198a1cbf52a29a8e266488d1d9dfce6e65018ec89c38",
+    "crates/sleeplens-core/src/source.rs": "4169c1a439740546a8fdef5e741a807205ddfad29434bd1c158b757db71ef2b7",
+    "crates/sleeplens-core/src/time.rs": "3f2dcc942499b7cbf05e624ae229227efa5c51445f4918e120f04d925cdf5b55",
+    "crates/sleeplens-core/src/tips.rs": "4b04685f90ea3df56b20406f7e70bfc88edbbf49f781fb48144ce405b30ce296",
+    "crates/sleeplens-psg/src/annotations.rs": "a761e2bf9e0c642aaec0bece613f09f19fb6934f22495c7a2feec68517e39566",
+    "crates/sleeplens-psg/src/bin/sleep-eval.rs": "e170777cd7dc249e0baf68e902135a928cfbc639974883e3528341fce350534d",
+    "crates/sleeplens-psg/src/edf.rs": "1ed98977734324a8e4de0b0e3a308554e863a2c3e2a3e983d2d9ec13ffd9fdaf",
+    "crates/sleeplens-psg/src/lib.rs": "285a4eceab68aa4f9feb7bcb4a1ed68d39a01276398cddd9d1b32cfaaf0b0cf7",
+    "crates/sleeplens-psg/src/metrics.rs": "42b551fb13d604c9a77eda47eecc2686b480c933919b1c52af9fad03a8f881ef",
+    "crates/sleeplens-psg/src/night.rs": "35698c60bc706140ac50ed357b1b1307246e19b0de8d04849beebd5f4cebff7c",
+    "crates/sleeplens-psg/src/profusion.rs": "94df2517ea102d960cc4244490771aa95e5d376834f20998bdfd9910dc543bbb",
+    "crates/sleeplens-psg/src/rec.rs": "187ac8ca6a49422f5235c72d82217f55402421b1ad77b16d9b555ca944609620",
+    "crates/sleeplens-psg/src/runner.rs": "7f2041615f03de66738fee8b2d62c21276c2c3e376aec918d7a67758b1cdac21",
+    "Cargo.lock": "5309e8b5a50b30d645f42af7977dae9f201ec51716cf35b923d80b6982d3ff75",
+    "Cargo.toml": "906abf2c4f74badbefad47b0d75a57ecb5d718959af5abafd805c5c725907cc0",
+    "crates/sleeplens-core/Cargo.toml": "6babea556a3f0ed7d5dd08bf1a1b15b72c6ca4458361b2f17b8fe1b8c5cac359",
+    "crates/sleeplens-psg/Cargo.toml": "89c1f1f3dc8d884e85e66c425bd3e5fd6883583066209fec3a59bef4b8209164"
+  },
+  "baselineCoreSourceSha256": {
+    "crates/sleeplens-core/src/assembly.rs": "71aa15fce05f85e9026f520de5bbd508556d95b94627bcf7ce9acafe9ae08e23",
+    "crates/sleeplens-core/src/bkp.rs": "ca07c36a13b44c050dbe7c328f311a5d0b66a0a22ea84084ebde3f896142c3f6",
+    "crates/sleeplens-core/src/dat.rs": "1bcfb983293773e096d0e85287cd19b9e32a5531e174a8a5a7a1ec13126f6dd5",
+    "crates/sleeplens-core/src/detect.rs": "e302da08aebd7bf836f0149be86941ac3bb0322ffed474362724ea3fa7062264",
+    "crates/sleeplens-core/src/lib.rs": "6b91651e8629742da6e67f118a6b7260acd7a3615bd7448808f9c18a5b76dcbe",
+    "crates/sleeplens-core/src/model.rs": "f9465a1a9988e81e595b208d585e13c19e3fc22e4b245a6059a63ddba17c6312",
+    "crates/sleeplens-core/src/pressure.rs": "35d4e4ef0c44ccdf4b1a596812c6d9d2d7ff7e6fa8e359b1e96e2882a2444b99",
+    "crates/sleeplens-core/src/score.rs": "8ab9ae1be29acf59b5867863fee7ae16c350a4c5e8054db801012d2571ccbcef",
+    "crates/sleeplens-core/src/settings.rs": "846ae48070a2e29191db0cb56ece2bd3a7557d0ef3643c91fc9fce06ae4c93d7",
+    "crates/sleeplens-core/src/sleep_stages/mod.rs": "e0a0ba9f8d33655f5b0d038bb9cd09804e13a5caeaeb357a6f9e7aa54575ff92",
+    "crates/sleeplens-core/src/sleep_stages/params.rs": "88f1f49205d477c0ee4fb8aff94708741ea7edc91b2cf29f74efb8cd1e145e40",
+    "crates/sleeplens-core/src/sleep_stages/signal.rs": "7d9fc087e7ed2ce9adf6e295a83dad430c4a9a960c2ee90967018aa464cd2515",
+    "crates/sleeplens-core/src/source.rs": "4169c1a439740546a8fdef5e741a807205ddfad29434bd1c158b757db71ef2b7",
+    "crates/sleeplens-core/src/time.rs": "3f2dcc942499b7cbf05e624ae229227efa5c51445f4918e120f04d925cdf5b55",
+    "crates/sleeplens-core/src/tips.rs": "4b04685f90ea3df56b20406f7e70bfc88edbbf49f781fb48144ce405b30ce296"
+  },
+  "benchmarkBinarySha256": {
+    "v4": "ba5106450374e69471f8d3fb03e4e69e5e40392c147f6b2ecc1f00cb45e68f9e",
+    "v5": "849c84496d2fea931af8a30e2cfd687505efd0f0c51cc7b2dc14feb7a00b9e31"
+  },
+  "reportsSha256": {
+    "ucddb-v4-heldout.txt": "816405044d7d96f7801236ea34883d3f6058f0c565a80263d2d7db44d491dd72",
+    "sleep-edf-v4-heldout.txt": "1eef24ac88bba1d35bfca565104ead579f4c2d1aebc0c53c07af868afd0ad2b9",
+    "ucddb-tuning.txt": "08fbb1748ffda85d350ce77fc0bfa60e417dd9a21da31bdadd2193a1fd8fa803",
+    "ucddb-v4.txt": "2ad6f99144d9bdfc3a45bb2716c1e25cd89a3c75cc2e6d7317b18743e2a7da33",
+    "ucddb-v5.txt": "f273f0eec219b5bb68307ec7225023ec947c1aa2bc98c7b354a0b63114b62b43",
+    "sleep-edf-v5-heldout.txt": "1eef24ac88bba1d35bfca565104ead579f4c2d1aebc0c53c07af868afd0ad2b9",
+    "ucddb-v5-heldout.txt": "a4a112cb2638aeafb840c0fd622ce76a1fa989b1932d3de13265141e7f3e7d71",
+    "sleep-edf-v4.txt": "ca452d8261b4e2cba1a1113c6e79a6b98538b322cf346fe66f02932f483fce2f",
+    "sleep-edf-v5.txt": "ca452d8261b4e2cba1a1113c6e79a6b98538b322cf346fe66f02932f483fce2f"
+  },
+  "exactMatrixAcceptance": [
+    {
+      "dataset": "ucddb",
+      "subset": "full corpus",
+      "view": "four classes, abstentions excluded",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": false
+    },
+    {
+      "dataset": "ucddb",
+      "subset": "full corpus",
+      "view": "four classes, abstentions scored as Light",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": false
+    },
+    {
+      "dataset": "ucddb",
+      "subset": "full corpus",
+      "view": "three classes, abstentions excluded",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": false
+    },
+    {
+      "dataset": "ucddb",
+      "subset": "full corpus",
+      "view": "three classes, abstentions scored as Light",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": false
+    },
+    {
+      "dataset": "ucddb",
+      "subset": "full corpus",
+      "view": "sleep vs wake, abstentions excluded",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": true
+    },
+    {
+      "dataset": "ucddb",
+      "subset": "full corpus",
+      "view": "sleep vs wake, abstentions scored as Light",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": true
+    },
+    {
+      "dataset": "ucddb",
+      "subset": "reserved participants",
+      "view": "four classes, abstentions excluded",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": false
+    },
+    {
+      "dataset": "ucddb",
+      "subset": "reserved participants",
+      "view": "four classes, abstentions scored as Light",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": false
+    },
+    {
+      "dataset": "ucddb",
+      "subset": "reserved participants",
+      "view": "three classes, abstentions excluded",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": true
+    },
+    {
+      "dataset": "ucddb",
+      "subset": "reserved participants",
+      "view": "three classes, abstentions scored as Light",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": true
+    },
+    {
+      "dataset": "ucddb",
+      "subset": "reserved participants",
+      "view": "sleep vs wake, abstentions excluded",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": true
+    },
+    {
+      "dataset": "ucddb",
+      "subset": "reserved participants",
+      "view": "sleep vs wake, abstentions scored as Light",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": true
+    },
+    {
+      "dataset": "sleep-edf",
+      "subset": "full corpus",
+      "view": "four classes, abstentions excluded",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": true
+    },
+    {
+      "dataset": "sleep-edf",
+      "subset": "full corpus",
+      "view": "four classes, abstentions scored as Light",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": true
+    },
+    {
+      "dataset": "sleep-edf",
+      "subset": "full corpus",
+      "view": "three classes, abstentions excluded",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": true
+    },
+    {
+      "dataset": "sleep-edf",
+      "subset": "full corpus",
+      "view": "three classes, abstentions scored as Light",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": true
+    },
+    {
+      "dataset": "sleep-edf",
+      "subset": "full corpus",
+      "view": "sleep vs wake, abstentions excluded",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": true
+    },
+    {
+      "dataset": "sleep-edf",
+      "subset": "full corpus",
+      "view": "sleep vs wake, abstentions scored as Light",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": true
+    },
+    {
+      "dataset": "sleep-edf",
+      "subset": "reserved participants",
+      "view": "four classes, abstentions excluded",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": true
+    },
+    {
+      "dataset": "sleep-edf",
+      "subset": "reserved participants",
+      "view": "four classes, abstentions scored as Light",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": true
+    },
+    {
+      "dataset": "sleep-edf",
+      "subset": "reserved participants",
+      "view": "three classes, abstentions excluded",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": true
+    },
+    {
+      "dataset": "sleep-edf",
+      "subset": "reserved participants",
+      "view": "three classes, abstentions scored as Light",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": true
+    },
+    {
+      "dataset": "sleep-edf",
+      "subset": "reserved participants",
+      "view": "sleep vs wake, abstentions excluded",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": true
+    },
+    {
+      "dataset": "sleep-edf",
+      "subset": "reserved participants",
+      "view": "sleep vs wake, abstentions scored as Light",
+      "accuracyDidNotFall": true,
+      "kappaDidNotFall": true,
+      "matrixIdentical": true
+    }
+  ],
+  "baselineCoreMatchesCommit": true
+}

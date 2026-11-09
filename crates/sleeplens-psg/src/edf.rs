@@ -147,11 +147,10 @@ impl Edf {
             .get(channel)
             .ok_or(EdfError::Header("channel index out of range"))?;
         let available = data.len().saturating_sub(self.header_bytes);
-        let complete = if self.record_bytes == 0 {
-            0
-        } else {
-            (available / self.record_bytes).min(self.effective_records())
-        };
+        let complete = available
+            .checked_div(self.record_bytes)
+            .unwrap_or(0)
+            .min(self.effective_records());
         if complete == 0 {
             return Err(EdfError::TooShort("a single complete data record"));
         }
@@ -174,11 +173,10 @@ impl Edf {
             .get(channel)
             .ok_or(EdfError::Header("channel index out of range"))?;
         let available = data.len().saturating_sub(self.header_bytes);
-        let complete = if self.record_bytes == 0 {
-            0
-        } else {
-            (available / self.record_bytes).min(self.effective_records())
-        };
+        let complete = available
+            .checked_div(self.record_bytes)
+            .unwrap_or(0)
+            .min(self.effective_records());
         if complete == 0 {
             return Err(EdfError::TooShort("a single complete data record"));
         }

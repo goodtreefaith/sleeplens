@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/sleeplens-banner.png" alt="SleepLens. Your CPAP data, in plain language." width="960">
+  <img src="docs/assets/sleeplens-owl-banner.png" alt="SleepLens with a sleepy owl mascot wearing a lens." width="960">
 </p>
 
 # SleepLens
@@ -8,11 +8,11 @@ Understand your CPAP nights, with your data stored on your computer.
 
 SleepLens is a free, open-source desktop app for people who want to make sense of their CPAP therapy. Import an Aeonmed AS100 SD card, check your nightly usage and mask seal, and explore the pressure and breathing events behind the summary. Plain-language explanations sit next to the numbers.
 
-**Early macOS build · Aeonmed AS100 validation ongoing · Local storage · MIT licensed**
+**Early macOS build · Aeonmed AS100A card support · Local storage · MIT licensed**
 
 [Explore the demo](https://goodtreefaith.github.io/sleeplens/demo/) · [Build for macOS](#build-for-macos) · [Contribute](CONTRIBUTING.md) · [Request a feature](https://github.com/goodtreefaith/sleeplens/issues/new/choose)
 
-> SleepLens is in early development. There is no published installer yet. The browser demo uses made-up data and previews the design; it does not import your SD card. Build the desktop app to read a supported card.
+> SleepLens is in early development. There is no published installer yet. The browser demo uses the current app interface with made-up data; it does not import your SD card. Build the desktop app to read a supported card.
 
 ## See your nights more clearly
 
@@ -23,7 +23,15 @@ SleepLens is a free, open-source desktop app for people who want to make sense o
 | How does this compare with other nights? | Review usage history and trends over a week, month, six months or year. |
 | What does this number mean? | Open inline help or the built-in glossary without leaving the app. |
 
-The app also includes an experimental sleep score and breathing-based sleep stage estimates. These are estimates, not measured sleep stages or a clinically validated assessment. CPAP usage time is not the same as time asleep.
+The app also includes an experimental sleep score and breathing-based sleep stage estimates. Early sleep-lab comparisons have not established reliable four-stage estimates. Read the [measured results and limitations](docs/SLEEP_STAGE_METHOD.md) before interpreting them. CPAP usage time is not the same as time asleep.
+
+## Your rhythm, if you want to explore it
+
+The optional Your rhythm screen asks about the part of the day you prefer, your usual free-day sleep window and a focus window you choose. Its labels reflect your answers. This original short reflection is not a validated chronotype test, and SleepLens does not measure your body clock or predict a productivity peak. Variable schedules and alarm constraints appear with the result.
+
+Answers stay on your computer in the desktop app. In the demo, they stay in page memory and disappear on reload. You can skip, edit or clear them, and they never change therapy measurements or your sleep score.
+
+The score card's owl has six decorative expressions, plus a curious state when the score is unavailable. The artwork does not change score calculations or their meaning.
 
 ## Take a look
 
@@ -31,7 +39,7 @@ The app also includes an experimental sleep score and breathing-based sleep stag
 
 *The desktop interface running in browser sample mode. All values are synthetic.*
 
-Try the [interactive design demo](https://goodtreefaith.github.io/sleeplens/demo/) without a card or account. To preview the current React interface locally:
+Try the [interactive app demo](https://goodtreefaith.github.io/sleeplens/demo/) without a card or account. To preview the current React interface locally:
 
 ```bash
 git clone https://github.com/goodtreefaith/sleeplens.git
@@ -41,6 +49,8 @@ npm run dev
 ```
 
 Open the localhost URL printed in the terminal and choose **Try with sample data**. Browser mode uses mock data and does not read your real card. You need Node.js 20 or newer for this preview.
+
+The [public demo](demo/) builds from the same React screens and mock API as the desktop interface. To refresh it after an interface change, run `npm --prefix app run build:demo` from the repository root. See [demo/README.md](demo/README.md) for local serving instructions.
 
 ## Your therapy data stays on your device
 

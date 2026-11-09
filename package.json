@@ -2,7 +2,7 @@
   "name": "sleeplens",
   "version": "0.0.0",
   "private": true,
-  "description": "Browser-only CPAP data viewer (developer tooling and parsers)",
+  "description": "SleepLens CPAP data viewer: reference parsers and developer tools",
   "license": "MIT",
   "type": "module",
   "engines": { "node": ">=20" },

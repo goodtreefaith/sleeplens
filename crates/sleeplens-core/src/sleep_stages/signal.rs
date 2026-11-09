@@ -8,7 +8,7 @@
 //! # How a breath is found
 //!
 //! PAP patient flow is a zero-mean signal with slow offset drift from leak
-//! compensation, so every sample is first referred to a 31-second moving median.
+//! compensation, so every sample is first referred to a two-minute moving mean.
 //! A breath then runs from one upward crossing of the baseline to the next, with
 //! hysteresis proportional to the recent amplitude:
 //!
@@ -209,12 +209,12 @@ fn baseline(flow: &[f32], hz: usize) -> Vec<f64> {
     }
     let mut smoothed = vec![0.0; seconds];
     let mut window: Vec<f64> = Vec::with_capacity(HALF_WINDOW * 2 + 1);
-    for second in 0..seconds {
+    for (second, value) in smoothed.iter_mut().enumerate() {
         window.clear();
         let lo = second.saturating_sub(HALF_WINDOW);
         let hi = (second + HALF_WINDOW + 1).min(seconds);
         window.extend(per_second[lo..hi].iter().flatten().copied());
-        smoothed[second] = if window.is_empty() {
+        *value = if window.is_empty() {
             0.0
         } else {
             window.iter().sum::<f64>() / window.len() as f64

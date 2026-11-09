@@ -3,16 +3,15 @@
 //! # What this can and cannot know
 //!
 //! Patient flow carries real information about sleep state, but much less than
-//! EEG. On its own it separates sleep from wake moderately well, REM poorly and
-//! Deep very poorly. Quiet wake can look exactly like sleep, and successful
-//! therapy removes the breathing variability that made sleep detectable in the
+//! EEG. This heuristic has public-PSG measurements but no paired AS100 validation.
+//! Quiet wake can look like sleep, and successful therapy can remove the
+//! breathing variability that made sleep detectable in the
 //! first place. Every claim in the app has to survive that.
 //!
-//! This estimator is not yet calibrated on polysomnography. It is a heuristic
-//! whose *directions* come from the respiratory sleep literature (timing and
-//! amplitude variability, inspiratory duty cycle, ventilation, slow ventilation
-//! oscillation) and whose *magnitudes* were set against synthetic nights with
-//! known stages. `docs/SLEEP_STAGE_EVIDENCE.md` lists what the literature
+//! The directions of the heuristic come from respiratory sleep literature:
+//! timing and amplitude variability, inspiratory duty cycle, ventilation and
+//! slow ventilation oscillation. Its original weights and caps remain hand-set;
+//! the real-participant parameter search did not pass its final test. `docs/SLEEP_STAGE_EVIDENCE.md` lists what the literature
 //! supports; `docs/SLEEP_STAGE_METHOD.md` describes this implementation.
 //!
 //! # How it works
@@ -21,7 +20,7 @@
 //!    hysteresis on baseline-removed flow, then described by cycle length,
 //!    inspiratory time, inspired volume, peak flow, duty cycle, mid-inspiratory
 //!    squareness and a flat-top flag. Two windows pool them: 90 s for
-//!    breath-to-breath detail and 150 s for slower structure.
+//!    breath-to-breath detail and 300 s for slower structure.
 //! 2. **Evidence** (`score_epochs`). Each stage accumulates independent evidence
 //!    contributions rather than a chain of if-statements, so a weak signal adds
 //!    little and a contradiction removes support. Wake needs irregular timing or
@@ -52,7 +51,7 @@ use signal::{analyze, periodic_breathing, window, Breath, Epoch, Signal, Window}
 pub const EPOCH_SECONDS: u32 = 30;
 /// Bumped whenever the algorithm or its defaults change, so stored nights are
 /// recomputed and old estimates are never silently mixed with new ones.
-pub const ESTIMATOR_VERSION: u32 = 4;
+pub const ESTIMATOR_VERSION: u32 = 5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -199,6 +198,62 @@ pub fn signal_probe(flow: &[f32], hz: u32) -> Vec<(usize, f64, f64, f64, f64)> {
             e.breaths
                 .iter()
                 .map(move |b| (epoch, b.duration, b.inspiratory, b.volume, b.duty))
+        })
+        .collect()
+}
+
+/// Per-epoch measurements for offline PSG diagnostics, not runtime confidence.
+/// Arrays contain interval CV, volume CV, ventilation CV, duty CV, duty, rate,
+/// and squareness in that order, using the same windows and exclusions as scoring.
+#[doc(hidden)]
+pub struct StageFeatureProbe {
+    pub short: [f64; 7],
+    pub long: [f64; 7],
+    pub regular_quartile: bool,
+    pub uncertain: bool,
+    pub deep_evidence: f64,
+}
+
+#[doc(hidden)]
+pub fn sleep_stage_epoch_features(input: &SleepStageInput<'_>) -> Vec<StageFeatureProbe> {
+    let hz = input.hz as usize;
+    if hz == 0 {
+        return Vec::new();
+    }
+    let Some(per_epoch) = hz.checked_mul(EPOCH_SECONDS as usize) else {
+        return Vec::new();
+    };
+    let signal = analyze(
+        input.flow,
+        hz,
+        input.excess_leak,
+        input.event_offsets,
+        per_epoch,
+    );
+    let n = signal.epoch.len();
+    let periodic = periodic_breathing(&signal.envelope, n);
+    let evidence = score_epochs(&signal.epoch, &periodic, &Params::default(), per_epoch, hz);
+    let usable: Vec<bool> = (0..n)
+        .map(|e| !evidence.artifact[e] && !evidence.leak[e])
+        .collect();
+    let values = |w: Window| {
+        [
+            w.interval_cv,
+            w.volume_cv,
+            w.ventilation_cv,
+            w.duty_cv,
+            w.duty,
+            w.rate,
+            w.squareness,
+        ]
+    };
+    (0..n)
+        .map(|e| StageFeatureProbe {
+            short: values(window(&signal.epoch, &usable, e, 1, 1)),
+            long: values(window(&signal.epoch, &usable, e, 4, 5)),
+            regular_quartile: evidence.regular_quartile[e],
+            uncertain: evidence.uncertain[e],
+            deep_evidence: evidence.deep[e],
         })
         .collect()
 }
@@ -468,7 +523,7 @@ fn score_epochs(
             && s.interval_cv < params.deep_interval_cap
             && s.volume_cv < params.deep_volume_cap
             && s.duty_cv < params.deep_long_duty_cap
-            && s.squareness >= params.deep_squareness
+            && s.squareness <= params.deep_squareness
             && [s, l].iter().all(|c| {
                 c.interval_cv < params.deep_long_interval_cap
                     && c.volume_cv < params.deep_long_volume_cap
@@ -485,7 +540,7 @@ fn score_epochs(
                     .max(l.interval_cv / params.deep_long_interval_cap)
                     .max(l.volume_cv / params.deep_long_volume_cap)
                     .clamp(0.0, 1.0);
-            let roundness = ((s.squareness - params.deep_squareness) / 0.15).clamp(0.0, 1.0);
+            let roundness = ((params.deep_squareness - s.squareness) / 0.15).clamp(0.0, 1.0);
             deep[e] = params.deep_regularity * calm
                 + params.deep_round_breath * roundness
                 + params.deep_rank_prior;
@@ -721,7 +776,7 @@ fn summarize(epochs: &[Epoch], stages: &[SleepStage], hz: usize) -> (StageMinute
 fn uncertain_runs(evidence: &Evidence, epochs: &[Epoch]) -> Vec<UncertaintyRun> {
     let mut runs: Vec<UncertaintyRun> = Vec::new();
     let mut open: Option<(usize, Confounder)> = None;
-    for (e, f) in epochs.iter().enumerate() {
+    for e in 0..epochs.len() {
         let cause = evidence
             .uncertain
             .get(e)
@@ -729,9 +784,6 @@ fn uncertain_runs(evidence: &Evidence, epochs: &[Epoch]) -> Vec<UncertaintyRun> 
             .unwrap_or(false)
             .then(|| evidence.causes[e])
             .flatten();
-        if f.valid == 0 {
-            cause.map(|_| ());
-        }
         match (open, cause) {
             (Some((first, reason)), Some(c)) if c == reason => {
                 open = Some((first, reason));
@@ -818,7 +870,7 @@ fn record_diagnostics(
         ),
         (
             "observed_long_slow_ventilation_cv",
-            values(|c| c.slow_ventilation_cv),
+            long_values(|c| c.slow_ventilation_cv),
         ),
         ("observed_long_volume_robust_cv", long_volume),
         ("observed_long_interval_robust_cv", long_interval),
@@ -904,7 +956,7 @@ fn record_diagnostics(
         ),
         (
             "deep_gate_fail_squareness",
-            fails(&|e| short[e].squareness >= params.deep_squareness),
+            fails(&|e| short[e].squareness <= params.deep_squareness),
         ),
         (
             "deep_gate_fail_long_interval",
@@ -950,8 +1002,47 @@ mod tests {
     }
 
     #[test]
-    fn version_four_is_published_and_stable() {
-        assert_eq!(ESTIMATOR_VERSION, 4);
+    fn deep_contour_gate_rejects_flattening_instead_of_rounded_breaths() {
+        let mut epochs: Vec<Epoch> = (0..60)
+            .map(|e| {
+                let spread = if e < 15 { 0.01 } else { 0.25 };
+                Epoch {
+                    valid: 1500,
+                    covered: 30.0,
+                    breaths: (0..10)
+                        .map(|i| {
+                            let offset = (i as f64 - 4.5) * spread;
+                            Breath {
+                                duration: 3.0 + offset,
+                                inspiratory: 1.2,
+                                volume: 0.5 + offset * 0.15,
+                                peak: 12.0,
+                                duty: 0.4,
+                                squareness: 0.8,
+                                flat_top: false,
+                            }
+                        })
+                        .collect(),
+                    ..Epoch::default()
+                }
+            })
+            .collect();
+        let periodic = vec![false; epochs.len()];
+        let rounded = score_epochs(&epochs, &periodic, &Params::default(), 1500, 50);
+        assert!(rounded.deep.iter().any(|&evidence| evidence > 0.0));
+        for epoch in &mut epochs {
+            for breath in &mut epoch.breaths {
+                breath.squareness = 1.0;
+                breath.flat_top = true;
+            }
+        }
+        let flattened = score_epochs(&epochs, &periodic, &Params::default(), 1500, 50);
+        assert!(flattened.deep.iter().all(|&evidence| evidence == 0.0));
+    }
+
+    #[test]
+    fn current_algorithm_version_is_five() {
+        assert_eq!(ESTIMATOR_VERSION, 5);
     }
 
     #[test]

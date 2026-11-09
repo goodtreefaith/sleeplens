@@ -41,7 +41,7 @@ data. For native card import and SQLite storage, follow the
 | `app/src/` | React interface, glossary and charts |
 | `src/`, `tools/`, `tests/` | TypeScript reference parser and inspection tools |
 | `fixtures/synthetic-as2x/` | Generated test card with fake identifiers and 2030 dates |
-| `demo/` | Standalone design demo with made-up data |
+| `demo/` | Generated public build of the current React interface with synthetic data |
 
 ## Check your change
 
@@ -65,7 +65,7 @@ npm --prefix app run build
 For interface changes, inspect the rendered result with synthetic data in light
 and dark themes. Check desktop layouts at 1920 and 1280 pixels and the minimum
 960 × 640 app window. Exercise the controls you changed with the keyboard too.
-Docs-only changes need a rendered review and working links, not a full rebuild.
+Run `npm --prefix app run build:demo` after interface changes so the public preview stays current. Serve the repository over HTTP and check `/demo/` with sample data. Docs-only changes need a rendered review and working links, not a full rebuild.
 
 In your pull request, explain the user-visible result and record which checks
 passed. Say which checks you could not run.

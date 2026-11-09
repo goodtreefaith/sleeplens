@@ -1,0 +1,87 @@
+held-out evaluation of the current default parameters
+held-out participant IDs: SC459, SC460, SC461, SC462, SC463, SC464, SC465, SC466, SC467, SC470, SC471, SC472, SC473, SC474, SC475, SC476, SC477, SC480, SC481, SC482
+
+40 nights, 20 participants, 77987 scored epochs, 28792 abstentions
+pooled coverage 73.0%; mean per-night coverage 73.2%; mean per-night accuracy 61.7%
+participant-bootstrap 95% interval for accuracy: 60.2% to 64.0%
+participant-bootstrap 95% interval for kappa: 0.035 to 0.120
+
+four classes, abstentions excluded: 77987 epochs, accuracy 62.074%, kappa 0.073945, macro F1 0.262875
+  confusion matrix: rows truth, columns predicted, Wake/Light/Deep/REM
+    45140 4860 0 1850
+    15200 2952 0 1396
+    1369 186 0 99
+    3928 689 0 318
+  class      epochs    recall precision      F1
+  Wake        51850     87.1%     68.8%   0.768
+  Light       19548     15.1%     34.0%   0.209
+  Deep         1654      0.0%      0.0%   0.000
+  REM          4935      6.4%      8.7%   0.074
+
+
+four classes, abstentions scored as Light: 106779 epochs, accuracy 51.159%, kappa 0.016505, macro F1 0.251911
+  confusion matrix: rows truth, columns predicted, Wake/Light/Deep/REM
+    45140 25388 0 1850
+    15200 9169 0 1396
+    1369 824 0 99
+    3928 2098 0 318
+  class      epochs    recall precision      F1
+  Wake        72378     62.4%     68.8%   0.654
+  Light       25765     35.6%     24.5%   0.290
+  Deep         2292      0.0%      0.0%   0.000
+  REM          6344      5.0%      8.7%   0.064
+
+
+three classes, abstentions excluded: 77987 epochs, accuracy 62.313%, kappa 0.074429, macro F1 0.350791
+  confusion matrix: rows truth, columns predicted, Wake/NREM/unused/REM
+    45140 4860 0 1850
+    16569 3138 0 1495
+    0 0 0 0
+    3928 689 0 318
+  class      epochs    recall precision      F1
+  Wake        51850     87.1%     68.8%   0.768
+  NREM        21202     14.8%     36.1%   0.210
+  REM          4935      6.4%      8.7%   0.074
+
+
+three classes, abstentions scored as Light: 106779 epochs, accuracy 51.931%, kappa 0.017133, macro F1 0.340883
+  confusion matrix: rows truth, columns predicted, Wake/NREM/unused/REM
+    45140 25388 0 1850
+    16569 9993 0 1495
+    0 0 0 0
+    3928 2098 0 318
+  class      epochs    recall precision      F1
+  Wake        72378     62.4%     68.8%   0.654
+  NREM        28057     35.6%     26.7%   0.305
+  REM          6344      5.0%      8.7%   0.064
+
+
+sleep vs wake, abstentions excluded: 77987 epochs, accuracy 65.113%, kappa 0.099371, macro F1 0.530756
+  confusion matrix: rows truth, columns predicted, Wake/Sleep/unused/unused
+    45140 6710 0 0
+    20497 5640 0 0
+    0 0 0 0
+    0 0 0 0
+  class      epochs    recall precision      F1
+  Wake        51850     87.1%     68.8%   0.768
+  Sleep       26137     21.6%     45.7%   0.293
+
+
+sleep vs wake, abstentions scored as Light: 106779 epochs, accuracy 55.296%, kappa 0.026483, macro F1 0.511120
+  confusion matrix: rows truth, columns predicted, Wake/Sleep/unused/unused
+    45140 27238 0 0
+    20497 13904 0 0
+    0 0 0 0
+    0 0 0 0
+  class      epochs    recall precision      F1
+  Wake        72378     62.4%     68.8%   0.654
+  Sleep       34401     40.4%     33.8%   0.368
+
+
+reference points: all valid labels, compare with the closed-set view
+  baseline: always Light             accuracy  24.1%  kappa  0.000
+  baseline: cohort majority          accuracy  67.8%  kappa  0.000
+  baseline: time of night only       accuracy  47.9%  kappa  0.198
+
+participants below 50% agreement
+  SC467                 48.6% of 2019 epochs

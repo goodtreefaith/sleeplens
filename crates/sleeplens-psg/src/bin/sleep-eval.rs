@@ -1,8 +1,8 @@
 //! `sleep-eval` — measure SleepLens stage accuracy against polysomnography.
 //!
 //! ```text
-//! sleep-eval run  <dir> --layout sleep-edf|nsrr [--out report.txt]
-//! sleep-eval tune <dir> --layout ... [--out tuned.json]
+//! sleep-eval run  <dir> --layout sleep-edf|ucddb|nsrr [--respiration-channel pattern] [--out report.txt]
+//! sleep-eval tune <dir> --layout ... [--out tuning.txt]
 //! sleep-eval night <edf> [--hypnogram <edf>] [--trace]
 //! ```
 //!
@@ -22,8 +22,8 @@ use sleeplens_psg::runner::{self, Layout};
 
 fn usage() -> &'static str {
     "Usage:
-  sleep-eval run  <dir> --layout sleep-edf|nsrr [--out report.txt] [--limit N]
-  sleep-eval tune <dir> --layout sleep-edf|nsrr [--out tuned.json] [--limit N]
+  sleep-eval run  <dir> --layout sleep-edf|ucddb|nsrr [--respiration-channel pattern] [--out report.txt] [--limit N]
+  sleep-eval tune <dir> --layout sleep-edf|ucddb|nsrr [--respiration-channel pattern] [--out tuning.txt] [--limit N]
   sleep-eval night <edf> --hypnogram <edf> [--trace]
   sleep-eval compare <dir> --layout ... [--out report.txt]"
 }
@@ -88,7 +88,8 @@ fn load_nights(args: &[String]) -> Result<Vec<sleeplens_psg::LabelledNight>, Str
     }
     let mut nights = Vec::new();
     for file in files.iter().take(limit.unwrap_or(usize::MAX)) {
-        match runner::load(file) {
+        match runner::load_with_channel(file, flag_value(args, "--respiration-channel").as_deref())
+        {
             Ok(night) => nights.push(night),
             Err(message) => eprintln!("skipped {message}"),
         }
@@ -113,107 +114,104 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Coordinate search over the estimator's parameter groups.
-///
-/// The search is deliberately simple and conservative: one parameter at a time,
-/// a small multiplicative grid, and a change is kept only if it improves
-/// participant-level kappa *and* does not lose more than a point of accuracy.
-/// That guards against a kappa gain bought by collapsing everything into one
-/// rare class.
-///
-/// It is not a substitute for calibration on independent data. With PSG for a
-/// few dozen participants, what this establishes is the *direction* and rough
-/// size of each parameter's effect, which is exactly what a hand-set heuristic
-/// lacks. Nothing is written into the shipped defaults automatically.
+/// Coordinate search on training/selection participants, checked once on test
+/// participants. Parameter fitting never writes the app's shipped defaults.
 fn cmd_tune(args: &[String]) -> Result<(), String> {
     let nights = load_nights(args)?;
-    // Split participants, not nights, so repeat recordings of one person never
-    // straddle the split. That leakage is the classic way to overstate stage
-    // accuracy.
     let mut participants: Vec<String> = nights
         .iter()
         .map(|n| runner::participant_of(&n.id))
         .collect();
     participants.sort();
     participants.dedup();
-    if participants.len() < 4 {
+    if participants.len() < 5 {
         return Err(format!(
-            "need at least 4 participants to tune; found {}",
+            "need at least 5 participants for train/selection/test; found {}",
             participants.len()
         ));
     }
-    let split = (participants.len() * 3) / 4;
-    let train_names: std::collections::BTreeSet<&str> =
-        participants[..split].iter().map(String::as_str).collect();
-    let (train, heldout): (Vec<_>, Vec<_>) = nights
+    let train_end = participants.len() * 3 / 5;
+    let selection_end = participants.len() * 4 / 5;
+    let train_names: std::collections::BTreeSet<&str> = participants[..train_end]
         .iter()
-        .cloned()
-        .partition(|n| train_names.contains(runner::participant_of(&n.id).as_str()));
+        .map(String::as_str)
+        .collect();
+    let selection_names: std::collections::BTreeSet<&str> = participants[train_end..selection_end]
+        .iter()
+        .map(String::as_str)
+        .collect();
+    let mut train = Vec::new();
+    let mut selection = Vec::new();
+    let mut test = Vec::new();
+    for night in nights {
+        let participant = runner::participant_of(&night.id);
+        if train_names.contains(participant.as_str()) {
+            train.push(night);
+        } else if selection_names.contains(participant.as_str()) {
+            selection.push(night);
+        } else {
+            test.push(night);
+        }
+    }
     println!(
-        "tuning on {} training nights / {} held-out nights from {} participants",
+        "participant split: {} train / {} selection / {} untouched test; nights {} / {} / {}",
+        train_end,
+        selection_end - train_end,
+        participants.len() - selection_end,
         train.len(),
-        heldout.len(),
-        participants.len()
+        selection.len(),
+        test.len()
     );
-
-    let mut params = Params::default();
-    let baseline = runner::evaluate(&heldout, &params);
-    let mut best_kappa = baseline.coverage_three.kappa;
-    let mut best_accuracy = baseline.coverage_three.accuracy;
-    println!(
-        "starting held-out three-class kappa {:.3}, accuracy {:.1}%",
-        best_kappa,
-        best_accuracy * 100.0
-    );
-
+    let shipped = Params::default();
+    let mut params = shipped;
+    let mut best_train = runner::evaluate(&train, &params);
+    let mut best_selection = runner::evaluate(&selection, &params);
     let mut accepted = Vec::new();
     for (name, apply) in candidate_adjustments() {
-        let mut improved = params;
-        if !apply(&mut improved) {
+        let mut candidate = params;
+        if !apply(&mut candidate) || candidate.validate().is_err() {
             continue;
         }
-        if improved.validate().is_err() {
+        let trained = runner::evaluate(&train, &candidate);
+        if trained.coverage.kappa < best_train.coverage.kappa {
             continue;
         }
-        let trained = runner::evaluate(&train, &improved);
-        let held = runner::evaluate(&heldout, &improved);
-        // Require the change to help on training data too; a change that only
-        // helps held-out data is noise.
-        if trained.coverage_three.kappa < runner::evaluate(&train, &params).coverage_three.kappa {
-            continue;
-        }
-        if held.coverage_three.kappa > best_kappa + 1e-3
-            && held.coverage_three.accuracy + 0.01 >= best_accuracy
-        {
+        let selected = runner::evaluate(&selection, &candidate);
+        if improves_without_accuracy_loss(&selected, &best_selection) {
             println!(
-                "  accept {name}: kappa {:.3} -> {:.3}, accuracy {:.1}% -> {:.1}%",
-                best_kappa,
-                held.coverage_three.kappa,
-                best_accuracy * 100.0,
-                held.coverage_three.accuracy * 100.0
+                "  select {name}: four-class kappa {:.3} -> {:.3}, accuracy {:.1}% -> {:.1}%",
+                best_selection.coverage.kappa,
+                selected.coverage.kappa,
+                best_selection.coverage.accuracy * 100.0,
+                selected.coverage.accuracy * 100.0
             );
-            best_kappa = held.coverage_three.kappa;
-            best_accuracy = held.coverage_three.accuracy;
-            params = improved;
+            best_train = trained;
+            best_selection = selected;
+            params = candidate;
             accepted.push(name.to_string());
         }
     }
-
-    let final_report = runner::evaluate(&heldout, &params);
+    // Only this final candidate sees the test participants. Rejected values are
+    // not retried on test data, and the default remains the fallback.
+    let baseline_test = runner::evaluate(&test, &shipped);
+    let candidate_test = runner::evaluate(&test, &params);
+    let passes =
+        !accepted.is_empty() && improves_without_accuracy_loss(&candidate_test, &baseline_test);
+    let final_params = if passes { params } else { shipped };
+    let split_description = format!(
+        "split by participant, sorted identifiers: {train_end} train / {} selection / {} test\ntrain IDs: {}\nselection IDs: {}\ntest IDs: {}",
+        selection_end - train_end,
+        participants.len() - selection_end,
+        participants[..train_end].join(", "),
+        participants[train_end..selection_end].join(", "),
+        participants[selection_end..].join(", "),
+    );
     let output = format!(
-        "{}\n\naccepted adjustments ({}):\n{}\n\nfinal parameters:\n{:#?}\n",
-        final_report.render(),
+        "{split_description}\n\ndefault preset on untouched test:\n{}\ncandidate on untouched test:\n{}\nselection adjustments ({}):\n{}\n\ncandidate parameters before test decision:\n{params:#?}\n\naccepted on untouched test: {passes}\nfinal parameters (defaults if rejected):\n{final_params:#?}\n",
+        baseline_test.render(),
+        candidate_test.render(),
         accepted.len(),
-        if accepted.is_empty() {
-            "  none".to_string()
-        } else {
-            accepted
-                .iter()
-                .map(|name| format!("  {name}"))
-                .collect::<Vec<_>>()
-                .join("\n")
-        },
-        params
+        accepted.join("\n"),
     );
     match flag_value(args, "--out") {
         Some(path) => {
@@ -225,11 +223,33 @@ fn cmd_tune(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn improves_without_accuracy_loss(
+    candidate: &runner::Evaluation,
+    baseline: &runner::Evaluation,
+) -> bool {
+    score_improves(
+        candidate.coverage.kappa,
+        candidate.coverage.accuracy,
+        baseline.coverage.kappa,
+        baseline.coverage.accuracy,
+    ) && [
+        (&candidate.closed, &baseline.closed),
+        (&candidate.coverage_three, &baseline.coverage_three),
+        (&candidate.closed_three, &baseline.closed_three),
+        (&candidate.coverage_binary, &baseline.coverage_binary),
+        (&candidate.closed_binary, &baseline.closed_binary),
+    ]
+    .iter()
+    .all(|(next, previous)| next.kappa >= previous.kappa && next.accuracy >= previous.accuracy)
+}
+
 /// Named single-parameter adjustments, tried in order.
 ///
 /// Each entry is a coarse step in the direction the literature suggests, not a
 /// fine grid: the goal is to find which knobs matter, not to overfit.
-fn candidate_adjustments() -> Vec<(&'static str, fn(&mut Params) -> bool)> {
+type Adjustment = (&'static str, fn(&mut Params) -> bool);
+
+fn candidate_adjustments() -> Vec<Adjustment> {
     // Each entry is one coarse step in a direction the literature suggests, not a
     // fine grid: the aim is to find which knobs matter, not to overfit.
     fn scaled(value: &mut f64, factor: f64, range: (f64, f64)) -> bool {
@@ -417,7 +437,10 @@ fn cmd_compare(args: &[String]) -> Result<(), String> {
         heldout
     };
     let shipped = runner::evaluate(&heldout, &sleeplens_core::sleep_stages::default_params());
-    let mut report = String::from("held-out evaluation of the shipped parameters\n\n");
+    let mut report = format!(
+        "held-out evaluation of the current default parameters\nheld-out participant IDs: {}\n\n",
+        participants[split..].join(", ")
+    );
     report.push_str(&shipped.render());
     match flag_value(args, "--out") {
         Some(path) => {
@@ -456,7 +479,8 @@ fn cmd_night(args: &[String]) -> Result<(), String> {
                 .ok_or("no matching night")?
         }
     };
-    let night = runner::load(&files)?;
+    let night =
+        runner::load_with_channel(&files, flag_value(args, "--respiration-channel").as_deref())?;
     let predictions = runner::estimate(&night, &sleeplens_core::sleep_stages::default_params());
     let glyph = |stage: Option<sleeplens_psg::StageLabel>| match stage {
         Some(sleeplens_psg::StageLabel::Wake) => 'W',
@@ -477,5 +501,34 @@ fn cmd_night(args: &[String]) -> Result<(), String> {
     );
     let estimated: String = predictions.iter().map(|p| glyph(p.flatten())).collect();
     println!("  estimate {estimated}");
+    if args.iter().any(|arg| arg == "--trace") {
+        println!(
+            "{}",
+            sleeplens_core::sleep_stages::sleep_stage_debug(
+                &sleeplens_core::sleep_stages::SleepStageInput {
+                    start: &night.id,
+                    flow: &night.flow,
+                    hz: 50,
+                    excess_leak: &[],
+                    event_offsets: &[],
+                }
+            )
+        );
+    }
     Ok(())
+}
+
+fn score_improves(kappa: f64, accuracy: f64, baseline_kappa: f64, baseline_accuracy: f64) -> bool {
+    kappa > baseline_kappa + 1e-3 && accuracy >= baseline_accuracy
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn tuning_rejects_any_accuracy_loss_even_if_kappa_improves() {
+        assert!(!score_improves(0.3, 0.599, 0.2, 0.6));
+        assert!(!score_improves(0.2, 0.7, 0.2, 0.6));
+        assert!(score_improves(0.3, 0.6, 0.2, 0.6));
+    }
 }

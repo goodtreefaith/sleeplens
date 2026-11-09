@@ -10,6 +10,7 @@ import { NightScreen } from "./screens/Night";
 import { OverviewScreen } from "./screens/Overview";
 import { SettingsScreen } from "./screens/Settings";
 import { TrendsScreen } from "./screens/Trends";
+import { RhythmScreen } from "./screens/Rhythm";
 
 const NAV: { screen: Screen; label: string; icon: string; needsData?: boolean }[] = [
   { screen: "overview", label: "Overview", icon: "home", needsData: true },
@@ -17,6 +18,7 @@ const NAV: { screen: Screen; label: string; icon: string; needsData?: boolean }[
   { screen: "trends", label: "Trends", icon: "trend", needsData: true },
   { screen: "import", label: "Import", icon: "card" },
   { screen: "settings", label: "Settings", icon: "gear" },
+  { screen: "rhythm", label: "Your rhythm", icon: "sun" },
   { screen: "learn", label: "Learn", icon: "book" }
 ];
 
@@ -80,7 +82,7 @@ export function App() {
 
       <div className="main">
         <header className="topbar" data-tauri-drag-region>
-          {device ? (
+          {api.kind === "mock" ? <span className="device" title="Synthetic sample device">{device ? `Sample device · ${device.model}` : "Sample preview"}</span> : device ? (
             <span className="device" title="Device on the last imported card">
               <i aria-hidden="true" />{device.brand} {device.model} · serial {device.serialMasked}
             </span>
@@ -93,11 +95,12 @@ export function App() {
               Importing… {imp.progress?.phase === "nights" ? `${imp.progress.done} of ${imp.progress.total}` : ""}
             </button>
           ) : null}
-          {api.kind === "mock" ? <span className="quiet preview-note">Browser preview with made-up data</span> : null}
+          {api.kind === "mock" ? <span className="quiet preview-note">Sample data · desktop preview</span> : null}
           <span className="spacer" data-tauri-drag-region />
         </header>
 
         <main className="content" id="content">
+          {api.kind === "mock" ? <p className="demo-banner" role="note"><Logo size={30} /><span><strong>Explore with sample data.</strong> These nights are made up. Sleep stages are experimental. Use the desktop app to import a card.</span></p> : null}
           {data.error ? <p className="error-box" role="alert">Could not read your data: {data.error}</p> : null}
           {data.loading ? (
             <div className="loading" role="status">Loading…</div>
@@ -109,6 +112,8 @@ export function App() {
             <NightScreen date={route.date} go={go} theme={theme} />
           ) : screen === "trends" ? (
             <TrendsScreen route={route} go={go} />
+          ) : screen === "rhythm" ? (
+            <RhythmScreen go={go} />
           ) : screen === "settings" ? (
             <SettingsScreen go={go} themePref={themePref} setThemePref={setThemePref} />
           ) : (

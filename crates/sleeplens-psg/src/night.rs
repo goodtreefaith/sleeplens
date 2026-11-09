@@ -148,8 +148,12 @@ pub fn labels_from_onsets(
             .filter(|d| *d > 0.0)
             .map(|d| (d / epoch_seconds).round().max(1.0) as usize)
             .unwrap_or(1);
-        for epoch in first..(first + span).min(epochs) {
-            labels[epoch] = stage;
+        for label in labels
+            .iter_mut()
+            .take((first + span).min(epochs))
+            .skip(first)
+        {
+            *label = stage;
         }
     }
     labels

@@ -21,7 +21,9 @@ use sleeplens_core::sleep_stages::{SleepStage, SleepStageEstimate, SleepStageInp
 
 use crate::annotations;
 use crate::edf::{self, Edf};
-use crate::metrics::{accuracy_of, kappa_of, Baseline, Bootstrap, Report, Tally};
+use crate::metrics::{
+    accuracy_of, class_index, kappa_of, Baseline, Bootstrap, Report, Tally, CLASSES,
+};
 use crate::night::{labels_from_onsets, normalise_respiration, LabelledNight, StageLabel, HZ};
 use crate::profusion;
 use crate::rec;
@@ -99,17 +101,27 @@ pub fn discover(root: &Path, layout: Layout) -> Result<(Vec<NightFiles>, Vec<Str
         Layout::SleepEdf => {
             for path in &edfs {
                 let name = file_stem(path);
-                // The recording is `<subject>E0-PSG`; the hypnogram is
-                // `<subject>EC-Hypnogram` or `<subject>EH-Hypnogram`.
-                let Some(subject) = name.strip_suffix("E0-PSG") else {
+                let Some(recording) = name.strip_suffix("-PSG") else {
                     continue;
                 };
+                // The final recording letter is E, F or G; the hypnogram's
+                // last character identifies its scorer, not its participant.
+                let bytes = recording.as_bytes();
+                if bytes.len() != 8
+                    || !recording.starts_with("SC4")
+                    || !bytes[3..6].iter().all(u8::is_ascii_digit)
+                    || !bytes[6].is_ascii_uppercase()
+                    || bytes[7] != b'0'
+                {
+                    continue;
+                }
+                let prefix = &recording[..7];
                 let hypnogram = edfs.iter().find(|candidate| {
                     let stem = file_stem(candidate);
                     stem.strip_suffix("-Hypnogram").is_some_and(|head| {
-                        head.len() == subject.len() + 2
-                            && head.starts_with(subject)
-                            && (head.ends_with("EC") || head.ends_with("EH"))
+                        head.len() == 8
+                            && head.starts_with(prefix)
+                            && head.as_bytes()[7].is_ascii_uppercase()
                     })
                 });
                 match hypnogram {
@@ -200,10 +212,17 @@ fn file_stem(path: &Path) -> String {
 /// Participant identifier from a recording name, used to keep repeat nights
 /// together in the bootstrap.
 ///
-/// Sleep-EDF names a subject `SC4001` with two nights (`E0` and `E1`), so the
-/// night suffix is stripped. NSRR names carry only a sequence number, which is
+/// Sleep-EDF uses `SC4ssNE0`: `ss` is the person and `N` the night, so
+/// `SC4001E0` and `SC4002E0` belong to the same participant. NSRR names carry a sequence number, which is
 /// still stable per participant.
 pub fn participant_of(name: &str) -> String {
+    let bytes = name.as_bytes();
+    if bytes.len() >= 8
+        && (name.starts_with("SC4") || name.starts_with("ST7"))
+        && bytes[3..6].iter().all(u8::is_ascii_digit)
+    {
+        return name[..5].to_string();
+    }
     if let Some(rest) = name.trim_start_matches("mesa-sleep-").strip_prefix("shhs") {
         // `shhs1-200001` -> the participant is the numeric component.
         return rest
@@ -229,6 +248,14 @@ pub fn participant_of(name: &str) -> String {
 
 /// Load a night: normalised respiration at 50 Hz plus one label per epoch.
 pub fn load(night: &NightFiles) -> Result<LabelledNight, String> {
+    load_with_channel(night, None)
+}
+
+/// Explicit channel selection for research cohorts, with no silent fallback.
+pub fn load_with_channel(
+    night: &NightFiles,
+    preferred: Option<&str>,
+) -> Result<LabelledNight, String> {
     let NightSignal::Edf(signal_path) = &night.signal;
     let data = std::fs::read(signal_path).map_err(|e| format!("{}: {e}", night.id))?;
     let edf = if rec::is_rec(&data) {
@@ -237,7 +264,12 @@ pub fn load(night: &NightFiles) -> Result<LabelledNight, String> {
         edf::parse_header(&data)
     }
     .map_err(|e| format!("{}: {e}", night.id))?;
-    let channel = respiration_channel(&edf)
+    require_complete(&edf, data.len()).map_err(|e| format!("{}: {e}", night.id))?;
+    let channel = preferred
+        .map_or_else(
+            || respiration_channel(&edf),
+            |name| edf.find(&[name]).first().copied(),
+        )
         .ok_or_else(|| format!("{}: no respiration channel found", night.id))?;
     let raw = edf
         .read_channel(&data, channel)
@@ -257,6 +289,8 @@ pub fn load(night: &NightFiles) -> Result<LabelledNight, String> {
         NightLabels::EdfHypnogram(path) => {
             let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", night.id))?;
             let hyp = edf::parse_header(&bytes).map_err(|e| format!("{}: {e}", night.id))?;
+            require_complete(&hyp, bytes.len())
+                .map_err(|e| format!("{}: hypnogram {e}", night.id))?;
             let channel = hyp
                 .annotation_channel
                 .ok_or_else(|| format!("{}: hypnogram is not EDF+", night.id))?;
@@ -282,6 +316,22 @@ pub fn load(night: &NightFiles) -> Result<LabelledNight, String> {
     })
 }
 
+fn require_complete(edf: &Edf, actual: usize) -> Result<(), String> {
+    let records = if edf.is_annotation_only() {
+        1
+    } else {
+        edf.records
+    };
+    let expected = records
+        .checked_mul(edf.record_bytes)
+        .and_then(|n| n.checked_add(edf.header_bytes))
+        .ok_or("recording size overflows")?;
+    if actual < expected {
+        return Err(format!("truncated recording: {actual} bytes, header requires {expected}; excluded from evaluation"));
+    }
+    Ok(())
+}
+
 fn mapped_labels(list: &[annotations::Annotation], epochs: usize) -> Vec<StageLabel> {
     let mapped: Vec<(f64, Option<f64>, StageLabel)> = list
         .iter()
@@ -295,9 +345,10 @@ fn mapped_labels(list: &[annotations::Annotation], epochs: usize) -> Vec<StageLa
 
 /// Parse a ucddb `*_stage.txt`: one integer per 30-second epoch.
 ///
-/// Codes follow the dataset's own convention, which matches the R&K set the
-/// scoring used: 0 Wake, 1 N1, 2 N2, 3 N3, 4 N4, 5 REM. A line that is blank or
-/// not a code becomes `Excluded` rather than shifting every later epoch.
+/// UCDDB uses 0 Wake, 1 REM, 2 N1, 3 N2, 4 N3, 5 N4, 6 Artifact and
+/// 7 Indeterminate, unlike the Profusion codes. See the dataset's annotation
+/// legend at <https://physionet.org/content/ucddb/1.0.0/>.
+/// Blank lines are ignored; unknown codes retain an excluded epoch.
 pub fn stage_codes(text: &str) -> Result<Vec<StageLabel>, String> {
     let mut labels = Vec::new();
     for line in text.lines() {
@@ -306,8 +357,11 @@ pub fn stage_codes(text: &str) -> Result<Vec<StageLabel>, String> {
             continue;
         }
         let label = match trimmed.parse::<u8>() {
-            Ok(code) => crate::profusion::stage_from_code(code),
-            Err(_) => StageLabel::Excluded,
+            Ok(0) => StageLabel::Wake,
+            Ok(1) => StageLabel::Rem,
+            Ok(2 | 3) => StageLabel::Light,
+            Ok(4 | 5) => StageLabel::Deep,
+            _ => StageLabel::Excluded,
         };
         labels.push(label);
     }
@@ -432,7 +486,7 @@ pub fn evaluate(
 ) -> Evaluation {
     let baselines = [
         Baseline::AlwaysLight,
-        Baseline::Majority,
+        Baseline::Majority(cohort_majority(nights)),
         Baseline::TimeOnly,
     ];
     let mut coverage = Tally::default();
@@ -518,6 +572,22 @@ pub fn evaluate(
     }
 }
 
+/// Ties follow CLASSES order: Wake, Light, Deep, REM. This is a descriptive
+/// reference derived from the evaluated labels, not a trained predictor.
+fn cohort_majority(nights: &[LabelledNight]) -> StageLabel {
+    let mut counts = [0usize; 4];
+    for label in nights.iter().flat_map(|night| &night.labels) {
+        if let Some(index) = class_index(*label) {
+            counts[index] += 1;
+        }
+    }
+    let largest = counts.iter().copied().max().unwrap_or(0);
+    CLASSES[counts
+        .iter()
+        .position(|&count| count == largest)
+        .unwrap_or(0)]
+}
+
 impl Evaluation {
     pub fn render(&self) -> String {
         let mut out = String::new();
@@ -528,7 +598,8 @@ impl Evaluation {
         );
         let _ = writeln!(
             out,
-            "coverage {:.1}% of labelled epochs were claimed; mean per-night accuracy {:.1}%",
+            "pooled coverage {:.1}%; mean per-night coverage {:.1}%; mean per-night accuracy {:.1}%",
+            100.0 * self.epochs as f64 / (self.epochs + self.abstained).max(1) as f64,
             self.coverage_mean * 100.0,
             self.mean_night_accuracy * 100.0
         );
@@ -557,7 +628,10 @@ impl Evaluation {
         ] {
             let _ = writeln!(out, "\n{}", report.render());
         }
-        let _ = writeln!(out, "\nreference points");
+        let _ = writeln!(
+            out,
+            "\nreference points: all valid labels, compare with the closed-set view"
+        );
         for baseline in &self.baselines {
             let _ = writeln!(
                 out,
@@ -636,10 +710,66 @@ mod tests {
 
     #[test]
     fn participant_ids_strip_night_suffixes() {
-        assert_eq!(participant_of("SC4001E0-PSG"), "SC4001");
-        assert_eq!(participant_of("SC4001E1-PSG"), "SC4001");
+        assert_eq!(participant_of("SC4001E0-PSG"), "SC400");
+        assert_eq!(participant_of("SC4002E0-PSG"), "SC400");
+        assert_eq!(participant_of("SC4011E0-PSG"), "SC401");
+        assert_eq!(participant_of("ST7011J0-PSG"), "ST701");
+        assert_eq!(participant_of("ST7012J0-PSG"), "ST701");
         assert_eq!(participant_of("mesa-sleep-0001"), "0001");
         assert_eq!(participant_of("shhs1-200001"), "200001");
+    }
+
+    #[test]
+    fn evaluation_rejects_truncated_recordings() {
+        let edf = edf::parse_header(&header_with_labels(&["Flow"])).unwrap();
+        assert!(require_complete(&edf, edf.header_bytes).is_err());
+        assert!(require_complete(&edf, edf.header_bytes + edf.record_bytes).is_ok());
+    }
+
+    #[test]
+    fn cohort_majority_is_not_assumed_light_and_ties_are_stable() {
+        let mut night = LabelledNight {
+            id: "test".into(),
+            flow: vec![0.0; HZ * 90],
+            labels: vec![StageLabel::Wake, StageLabel::Wake, StageLabel::Light],
+        };
+        let report = evaluate(
+            &[night.clone()],
+            &sleeplens_core::sleep_stages::default_params(),
+        );
+        assert_eq!(report.baselines[1].matrix[0][0], 2);
+        assert_eq!(report.baselines[1].matrix[1][0], 1);
+        assert_eq!(report.baselines[0].matrix[0][1], 2);
+        night.labels = vec![StageLabel::Light, StageLabel::Wake];
+        assert_eq!(cohort_majority(&[night]), StageLabel::Wake);
+    }
+
+    #[test]
+    fn sleep_edf_discovery_keeps_all_recording_and_scorer_letters() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("sleeplens-pairing-{}-{unique}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        for name in [
+            "SC4001E0-PSG.edf",
+            "SC4001EJ-Hypnogram.edf",
+            "SC4261F0-PSG.edf",
+            "SC4261FM-Hypnogram.edf",
+            "SC4281G0-PSG.edf",
+            "SC4281GC-Hypnogram.edf",
+            "SC4282G0-PSG.edf",
+        ] {
+            std::fs::write(dir.join(name), []).unwrap();
+        }
+        let (pairs, unpaired) = discover(&dir, Layout::SleepEdf).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(pairs.len(), 3);
+        assert_eq!(unpaired, ["SC4282G0-PSG: no hypnogram"]);
+        assert!(pairs.iter().any(|p| p.id == "SC4261F0-PSG"));
+        assert!(pairs.iter().any(|p| p.id == "SC4281G0-PSG"));
     }
 
     #[test]
@@ -659,17 +789,19 @@ mod tests {
     }
 
     #[test]
-    fn stage_code_files_map_codes_and_keep_alignment() {
-        let labels = stage_codes("0\n1\n2\n3\n4\n5\n\nX\n").unwrap();
+    fn ucddb_stage_codes_follow_dataset_legend_not_profusion() {
+        let labels = stage_codes("0\n1\n2\n3\n4\n5\n6\n7\n\nX\n").unwrap();
         assert_eq!(
             labels,
             vec![
                 StageLabel::Wake,
-                StageLabel::Light,
-                StageLabel::Light,
-                StageLabel::Deep,
-                StageLabel::Deep,
                 StageLabel::Rem,
+                StageLabel::Light,
+                StageLabel::Light,
+                StageLabel::Deep,
+                StageLabel::Deep,
+                StageLabel::Excluded,
+                StageLabel::Excluded,
                 StageLabel::Excluded,
             ]
         );

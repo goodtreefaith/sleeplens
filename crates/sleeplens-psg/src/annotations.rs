@@ -47,10 +47,7 @@ pub fn parse_bytes(bytes: &[u8]) -> Vec<Annotation> {
         }
         // Additional TALs in the same record carry absolute onsets in the same
         // time base, so they are read directly rather than accumulated.
-        loop {
-            let Some((extra, next)) = read_tal(bytes, cursor) else {
-                break;
-            };
+        while let Some((extra, next)) = read_tal(bytes, cursor) {
             if extra.onset < 0.0 && extra.duration.is_none() && extra.text.is_empty() {
                 // A bare terminator ends the record.
                 cursor = next;

@@ -406,7 +406,8 @@ Near-boundary night counts and pressure tips use the P90-or-recorded-time defini
 
 ## Version 3 changes (2026-11-09): estimator v4 and measured accuracy
 
-Method and measurements: `docs/SLEEP_STAGE_METHOD.md`. `estimatorVersion` is 4.
+This section records historical estimator v4. Read the current version note
+below and [the method report](SLEEP_STAGE_METHOD.md) for current measurements.
 
 ### Estimator v4 changes
 
@@ -453,9 +454,24 @@ Behavioural rules the UI relies on:
 
 ### Accuracy
 
-SleepLens now *measures* its stage accuracy instead of asserting it, using
-`crates/sleeplens-psg` and the `sleep-eval` binary against expert-scored
-polysomnography. Current four-class agreement is below the always-Light baseline on
-the small sample measured so far; sleep versus wake is the only granularity that
-clearly beats chance. `docs/SLEEP_STAGE_METHOD.md` reports the numbers, the sample
-size, and the caveats. No UI claim may exceed what that document supports.
+The offline `sleep-eval` harness compares estimates with expert PSG labels. Read
+[the method and measured results](SLEEP_STAGE_METHOD.md) for the current corpus,
+participant counts, coverage, closed-set results and limitations. Historical
+small-sample figures do not establish performance on an AS100 night.
+
+`signalQuality` measures usable flow, not staging accuracy. The fixed confidence
+strings are heuristic labels, not calibrated probabilities. No UI claim may
+exceed the evidence in the method report.
+
+## Estimator version 5, 2026-11-09
+
+`estimatorVersion` is now 5. The serialized fields are unchanged. The Deep
+contour condition uses a maximum squareness of 0.95 and rewards the direction
+consistent with a rounded rather than flattened contour. No fitted parameter
+values were adopted; see [the method and evaluation](SLEEP_STAGE_METHOD.md).
+
+The desktop store marks older estimator versions as needing a re-read. Matching
+card file size and modification time cannot skip that re-import: the estimator
+version must also be current. Re-importing recomputes stages and their score
+contribution. Older saved blobs remain readable while the re-read is pending.
+This version change does not erase imported nights or validate stages on AS100.

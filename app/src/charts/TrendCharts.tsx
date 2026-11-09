@@ -131,7 +131,10 @@ export function UsageCalendar({ points, from, to, last, onPick }: { points: Tren
           </pattern>
         </defs>
       </svg>
-      <p className="heat-focus-readout quiet" aria-live="polite">{focusedLabel || "Use arrow keys to explore days. Enter opens a recorded night."}</p>
+      <div className="heat-focus-readout quiet">
+        <span style={{ visibility: focusedLabel ? "hidden" : "visible" }} aria-hidden={focusedLabel ? true : undefined}>Use arrow keys to explore days. Enter opens a recorded night.</span>
+        <span aria-live="polite">{focusedLabel}</span>
+      </div>
       {months.map((m) => {
         const first = `${m}-01`;
         const [y, mo] = m.split("-").map(Number) as [number, number];

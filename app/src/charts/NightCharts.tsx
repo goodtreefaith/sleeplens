@@ -287,7 +287,7 @@ export function NightCharts({ detail, unit, theme, zoom, onZoom }: Props) {
     { label: "Pressure", sub: u, help: "pressure", ref: refs[0]! },
     { label: "Extra leak", sub: "L/min, beyond the vent", help: "excessLeak", ref: refs[1]! },
     { label: "Flow amplitude", sub: "L/min, size of each breath", ref: refs[2]! },
-    { label: "Sleep stages", sub: detail.stages ? "Estimated from breathing and not validated against a sleep-lab test. Uncertain means the signal cannot support a stage claim; deep sleep is the least reliable estimate." : "Not recorded. Re-read the card to add stages.", help: "sleepStages" },
+    { label: "Sleep stages", sub: detail.stages ? "Estimated from breathing and not validated for your CPAP device. Uncertain means the signal cannot support a stage claim; deep sleep is the least reliable estimate." : "Not recorded. Re-read the card to add stages.", help: "sleepStages" },
     { label: "Events", sub: "each mark is one event", ref: refs[3]! }
   ];
 

@@ -1,0 +1,41 @@
+name: Build macOS preview artifacts
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apple-silicon:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - name: Install frontend dependencies
+        run: npm --prefix app ci
+      - name: Check frontend types
+        run: npm --prefix app run typecheck
+      - name: Run frontend tests
+        run: npm --prefix app test
+      - name: Run Rust workspace tests
+        # Real-card tests stay ignored; no card paths or private databases enter CI.
+        run: cargo test --workspace --locked
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version 2.12.4 --locked
+      - name: Prepare ad-hoc signed Apple Silicon artifacts
+        run: scripts/build-macos-release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SleepLens-macOS-aarch64-preview
+          path: target/release-assets/**
+          if-no-files-found: error
+          retention-days: 14

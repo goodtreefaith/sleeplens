@@ -37,8 +37,8 @@ Only the dialog plugin's `open` permission is enabled. Tauri's open permission
 covers both file and directory dialogs; the UI must pass `directory: true`
 for folder selection. No filesystem command permissions, HTTP or shell
 plugins are enabled. Sample data is mapped from the repository fixture to
-`sample-card/` in Tauri resources. The placeholder icon source is
-`icons/source.png`.
+`sample-card/` in Tauri resources. The owl icon source is
+`icons/source-owl.png`; Tauri generated the platform sizes from this transparent image.
 
 Verified on macOS on 2026-11-09: `cargo test --workspace` passed 32 tests,
 including six app pipeline/store tests; `cargo clippy --workspace --all-targets

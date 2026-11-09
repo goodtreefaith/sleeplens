@@ -333,3 +333,88 @@ this firmware) and a night with a real large leak.
 | Unsigned app warnings on macOS | Sign and notarise the `.dmg` in Phase 4 |
 | People read it as diagnosis | Plain disclaimer, no setting advice, thresholds marked as general guides |
 | Real data leaking into the repo | `.gitignore`, CI check, fixture anonymiser script |
+
+## Active continuation: owl branding and measured staging, 2026-11-09
+
+Faith approved the sleepy owl mascot and requested updating the app, repository
+branding and outdated demo. The demo will reuse the current React interface in
+synthetic browser mode. Keep the existing palette and layout; add no new motion.
+Apply unslop to public and in-app copy.
+
+The same request requires completing the public PSG downloads, measuring the
+existing estimator with the existing `sleep-eval` harness, diagnosing why Deep
+recall is zero, and accepting fitted parameters only after participant-level
+validation improves kappa without losing accuracy. Synthetic data checks behavior;
+it does not calibrate thresholds. Report coverage and closed-set results together.
+Keep research recordings outside Git and do not imply paired AS100/PSG validation.
+
+Faith explicitly instructed **no commits unless asked** for this continuation.
+Prepare and verify local changes; do not push or publish the hosted demo yet.
+Operational evidence and progress are recorded in
+`/Users/faithjhung/Documents/Codex/2026-11-09/sleeplens-owl-evaluation/STATE.md`.
+
+### Scope added by Faith, 2026-11-09
+
+Add five to ten owl expressions selected by sleep score, plus a companion
+character for an optional chronotype questionnaire and reported focus hours.
+Faith chose the optional-questionnaire recommendation. Keep this as an original
+self-report check-in, not a validated diagnostic scale or an inference from CPAP
+airflow. Keep profiles on-device, with edit, skip and clear controls.
+
+Prepare an installable macOS app for a GitHub release after verification. The
+explicit no-commit instruction remains in force. Prepare artifacts and a release
+packet before obtaining the final authorization to commit and publish. Windows
+remains future work. No installed app replacement is part of this request.
+
+### Verified local progress, 2026-11-09
+
+The app and demo now use the owl branding. The score card selects six decorative
+owl expressions and a curious expression for an unavailable score. Your rhythm
+uses a matching fox and the optional three-step questionnaire, with local native
+storage, memory-only demo answers, and skip, edit and clear controls. Score
+calculations are unchanged. Claude Opus 5.5 reviewed the rendered desktop, phone
+and isolated native views; the material visual findings were fixed.
+
+The isolated native QA app uses `com.goodtreefaith.sleeplens.qa`, preserving the
+installed app and its database. Synthetic import, save, quit/reopen and deletion
+checks passed. The current frontend passes TypeScript and 131 tests. The manual
+macOS workflow and release helper are prepared; final packaging follows the
+estimator decision. Current preview signing is ad-hoc, without notarization.
+
+All 25 UCDDB recordings and stage files are checksum verified. Its previous stage
+code mapping was incorrect, so those earlier accuracy figures are withdrawn.
+Sleep-EDF pairing, participant grouping, truncation checks and the majority
+baseline were also corrected and independently reviewed. The original estimator
+and contour candidate use the same corrected evaluator. Final methods, metric
+views and acceptance results belong in `SLEEP_STAGE_METHOD.md`.
+
+### Prepared for publication, 2026-11-09
+
+All 153 Sleep-EDF recordings from 78 people and all 25 UCDDB recordings from
+25 people passed exact-size and official SHA256 audits. Estimator v5 accepts the
+bounded contour correction. No reported accuracy or kappa view regresses on the
+full corpora or reserved participants. The fitted parameter search failed its
+final participant test and was rejected. Methods and sanitized harness outputs
+are in `SLEEP_STAGE_METHOD.md` and `evaluation/2026-11-09/`.
+
+Final workspace tests, formatting, Clippy with warnings denied, TypeScript and
+131 frontend tests pass. The final native QA build imported three bundled
+synthetic nights using estimator v5 and cleared them afterward. The browser
+calendar focus-shift bug was fixed and its first-click and keyboard paths pass.
+
+The Apple Silicon DMG and app ZIP are prepared with checksums, input hashes and
+read-only disk-image inspection. The preview is ad-hoc signed and not notarized.
+The exact distribution app was not launched; the separate QA build tested the
+same runtime source. No installed app was replaced. Publication and commits
+remain pending Faith's final go-ahead under the earlier no-commit instruction.
+
+### Publication approval and rhythm images, 2026-11-09
+
+Faith answered "yes commit" to the final commit/publication question and asked
+for chronotype character images. This lifts the earlier no-commit hold for the
+reviewed continuation. Commit the verified work, add character variants for the
+four existing self-reported rhythm preferences, then publish the updated demo
+and Apple Silicon preview release after the affected checks and packaging.
+Preserve the optional questionnaire's self-report meaning and all validation
+limits. This does not authorize replacing the installed app or accepting a new
+data-use agreement.
