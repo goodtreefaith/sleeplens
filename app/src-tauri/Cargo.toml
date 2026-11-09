@@ -1,0 +1,28 @@
+[package]
+name = "sleeplens-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "sleeplens_app"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+sleeplens-core = { path = "../../crates/sleeplens-core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde.workspace = true
+serde_json.workspace = true
+chrono = { workspace = true, features = ["clock"] }
+flate2 = "1"
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]

@@ -1,0 +1,13 @@
+[package]
+name = "sleeplens-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "sleeplens"
+path = "src/main.rs"
+
+[dependencies]
+sleeplens-core = { path = "../sleeplens-core" }
+serde_json.workspace = true

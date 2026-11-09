@@ -2,9 +2,9 @@
 
 **Drop in your CPAP SD card. See how last night went, in plain language.**
 
-SleepLens is a free, open-source web app for people who use CPAP and want to
-understand their therapy data without installing desktop software or learning
-clinical jargon. Drag the SD card folder (or a zip of it) onto the page and get:
+SleepLens is a free, open-source desktop app (macOS now, Windows later) for
+people who use CPAP and want to understand their therapy data without
+learning clinical jargon. Point it at your SD card and get:
 
 - **A nightly summary**: hours used, mask seal, pressure, and events per hour,
   each with a one-line "what this means" and a green / amber / red status.
@@ -13,7 +13,8 @@ clinical jargon. Drag the SD card folder (or a zip of it) onto the page and get:
   readers who want to see more.
 - **A printable one-page report** to bring to your doctor or sleep technician.
 
-> **Status: planning.** No app code yet. See
+> **Status: early macOS build.** The Rust core and the desktop app (Tauri) work
+> with the Aeonmed AS100 series. See
 > [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for the build plan
 > and [docs/FORMAT_NOTES.md](docs/FORMAT_NOTES.md) for what we know about the
 > card formats.
@@ -23,9 +24,11 @@ the planned screens with made-up data (nothing is uploaded).
 
 ## Your data stays on your device
 
-SleepLens is a static site. Your files are read and analysed **inside your
-browser**. Nothing is uploaded, there is no account, no analytics on file
-contents and no server. You can save the page and run it offline.
+SleepLens copies what it needs off the card into a local database on your
+computer (`~/Library/Application Support/com.goodtreefaith.sleeplens/` on
+macOS), so the card can go straight back into your machine. Nothing is
+uploaded: the app has no network access, no account and no analytics. You
+can delete everything from Settings.
 
 ## Supported machines (planned)
 
@@ -54,6 +57,18 @@ synthetic or fully anonymised (serial numbers, dates and times shifted).
 ## Licence
 
 [MIT](LICENSE)
+
+## Run the app (macOS)
+
+Needs Rust (`rustup`), Node 20+ and the Tauri CLI (`cargo install tauri-cli --version "^2" --locked`).
+
+```bash
+cd app && npm install && cargo tauri dev
+```
+
+`cargo tauri build --bundles app` builds `target/release/bundle/macos/SleepLens.app`.
+`cargo test --workspace` runs the Rust tests; `cargo run -p sleeplens-cli -- inspect <card>`
+prints a card summary from the command line.
 
 ## Developer tools
 

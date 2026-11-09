@@ -2,8 +2,8 @@
 
 ## 1. Goal
 
-A person with a CPAP drags their SD card folder onto a web page and within
-seconds understands:
+A person with a CPAP opens the SleepLens desktop app, points it at their SD
+card (or a copy of it) and within seconds understands:
 
 1. **Did I use it enough?** (hours per night, nights over 4 h)
 2. **Is it working?** (events per hour, mask leak, pressure)
@@ -13,86 +13,119 @@ seconds understands:
 Success means a first-time user can answer those four questions without
 reading a manual or knowing what "AHI" means.
 
+**Platform decision (2026-11-09):** SleepLens is a native desktop app built
+in Rust, macOS first, with Windows support planned (not built yet). The
+earlier plan for a static web app is replaced. Data lives on the user's own
+computer: the app copies what it needs off the card into a local database, so
+the card can go straight back into the machine.
+
 ## 2. Principles
 
-- **Private by design.** 100% client-side. No backend, no uploads, no
-  third-party scripts that see file contents. Works offline once loaded.
+- **Private by design.** Everything runs on the user's computer. No server,
+  no account, no telemetry, no network calls at all. The app works offline.
+- **Your data stays on your device.** Imported nights are stored in a local
+  SQLite database in the operating system's app-data folder
+  (`~/Library/Application Support/SleepLens` on macOS,
+  `%APPDATA%\SleepLens` on Windows). The user can see the folder, export it
+  and delete it from Settings.
 - **Plain language first, detail on demand.** Every number has a label a
   non-clinician understands, a status colour and a "what this means" line.
   Raw charts sit one tap deeper.
-- **Honest numbers.** If a value is estimated (for example events derived
-  from flow because the machine does not store them), say so on screen.
+- **Honest numbers.** Prefer the machine's own summary values (they match its
+  screen); say so on screen when a value is computed by SleepLens instead.
 - **Not medical advice.** Persistent, calm disclaimer; never suggest changing
   settings.
 - **Pluggable machines.** Each brand is a parser that produces one shared data
   model; the UI never knows which brand it is showing.
+- **Cross-platform by construction.** No macOS-only APIs in the core or the
+  app logic; anything platform-specific sits behind a small module so the
+  Windows build is a packaging task, not a rewrite.
 
 ## 3. Architecture
 
 ```
- drag & drop / file picker / .zip
+ SD card folder (or a copy / zip)  ── chosen with the native folder picker
             │
             ▼
-   detect.ts ── picks a parser by folder/file signature
-            │
-            ▼  (Web Worker, streaming, one night at a time)
-   parsers/as2x/*   parsers/resmed/*   parsers/…
-            │
-            ▼
-   model: Device, Night, Session, Channel(Float32Array), Event, SettingsChange
-            │
-            ├─► metrics.ts   usage, leak, pressure percentiles, events/hour
+ sleeplens-core (Rust crate, no UI, no OS calls)
+   detect ── picks a parser by folder/file signature
+   parsers::as2x   parsers::resmed (later)   …
+   model: Device, Night, Session, Settings, Event, Series
+   metrics: usage, leak, pressure percentiles, events/hour
             │
             ▼
-   IndexedDB cache (optional, per browser, user can clear)
+ SleepLens app (Tauri 2, Rust backend)
+   import ── walks the card, parses one night at a time on a worker thread,
+             reports progress, skips nights already imported
+   store  ── SQLite (rusqlite): devices, nights, summaries, events, settings
+             history, 1 Hz series per night
+   commands ── typed IPC the UI calls (list nights, night detail, trends …)
             │
             ▼
-   UI: Overview · Night · Trends · Report
+ UI (web view inside the app: Vite + React + TypeScript)
+   Import · Overview · Night · Trends · Report · Settings
+```
+
+Why Tauri: the core and all data handling are Rust, the app bundle is small
+(the system web view, no bundled browser), and the same project builds a
+`.app`/`.dmg` on macOS and an `.msi` on Windows. The UI reuses the design
+already worked out in `demo/`. The web view loads only local files; a strict
+Content Security Policy blocks all network access.
+
+### Repository layout
+
+```
+Cargo.toml                 Rust workspace
+crates/sleeplens-core/     parsers, data model, metrics (+ tests on fixtures)
+crates/sleeplens-cli/      `sleeplens inspect <card>` (replaces the Node inspector)
+app/                       Tauri app
+  src-tauri/               Rust backend: import, store, commands
+  src/                     React UI
+fixtures/synthetic-as2x/   synthetic test card (shared by Rust and TS tests)
+src/, tools/, tests/       TypeScript reference parser, kept until the Rust
+                           port matches it on the fixture and the real card
 ```
 
 ### Stack
 
 | Need | Choice | Why |
 | --- | --- | --- |
-| App | Vite + React + TypeScript | Simple static build, large contributor pool |
-| Styling | CSS modules + design tokens (CSS variables) | Light/dark, no runtime cost |
-| Charts | uPlot for waveforms, lightweight SVG for summaries | uPlot draws millions of points smoothly |
-| Parsing | Web Worker + `DataView`, streamed with `File.slice()` | 14 GB cards must not freeze or crash the tab |
-| Folders | `DataTransferItem.webkitGetAsEntry()` + `<input webkitdirectory>` | Drag a whole card in Chrome, Edge, Safari, Firefox |
-| Zip | `fflate` (streaming) | People often zip the card to share |
-| Storage | IndexedDB via `idb` | Remember computed summaries, not raw waveforms |
-| Tests | Vitest + Playwright | Parser unit tests and drag-drop end-to-end tests |
-| Hosting | GitHub Pages via Actions | Free, static, matches "no server" promise |
+| Core | Rust (stable), `sleeplens-core` crate | Fast, safe binary parsing; one implementation for every platform |
+| Desktop shell | Tauri 2 | Rust backend, system web view, macOS and Windows from one project |
+| UI | Vite + React + TypeScript inside the web view | Reuses the demo design; large contributor pool |
+| Styling | CSS variables (design tokens) | Light/dark, follows the system theme |
+| Charts | uPlot for waveforms, SVG for summaries | Draws a whole night of 1 Hz data smoothly |
+| Storage | SQLite via `rusqlite` (bundled) | One local file, easy to back up or delete |
+| Reading files | `std::fs` + memory-mapped or chunked reads | 30 MB night files, 14 GB cards, never all in memory |
+| Zip import | `zip` crate | People often zip the card to share |
+| Tests | `cargo test` (core, store), Vitest (UI logic), WebDriver/Playwright against the app for end-to-end | |
+| Packaging | `tauri build` → `.dmg` (macOS, Apple Silicon and Intel), later `.msi` (Windows) | |
 
-### Data model (shared by all parsers)
+### Data model (shared by all parsers, Rust)
 
-```ts
-interface Night {
-  date: string;              // evening the night started, YYYY-MM-DD
-  sessions: Session[];       // mask-on to mask-off periods
-  usageMinutes: number;
-  settings: Settings;        // prescribed min/max pressure, ramp, humidity
-  events: TherapyEvent[];    // apnea, hypopnea, flow limit…; source: 'device' | 'estimated'
-  summary: NightSummary;     // precomputed metrics (cheap to cache)
+```rust
+struct Night {
+    date: NaiveDate,             // evening the night started
+    sessions: Vec<Session>,      // mask-on to mask-off periods
+    usage_minutes: f32,
+    settings: Settings,          // mode, start/min/max pressure, ramp, humidity, comfort
+    events: Vec<TherapyEvent>,   // obstructive/central apnea, hypopnea, leak level …
+    summary: NightSummary,       // machine summary when present, else computed (with source flag)
 }
-interface Session {
-  start: Date; end: Date;
-  channels: Partial<Record<'pressure'|'flow'|'leak'|'tidalVolume'|'respRate'|'snore', Channel>>;
-}
-interface Channel { hz: number; unit: string; data: Float32Array; }
+struct Series { hz: f32, unit: &'static str, data: Vec<f32> }  // pressure, flow amplitude, excess/total leak, snore
 ```
 
-### Handling a 14 GB card
+### What is stored, and what is not
 
-- Read the folder tree first (names and sizes only) and show the date range
-  instantly.
-- Parse the **summary pass** for every night: usage, session times, settings,
-  per-night percentiles, computed in the worker with downsampling, not keeping
-  full waveforms. Show progress ("Reading night 212 of 689").
-- Parse **full waveforms only for the night the user opens**, then drop them
-  when they leave.
-- Cache summaries in IndexedDB keyed by file name + size + modified time, so a
-  second drop of the same card only reads new nights.
+- Stored per night: summary, sessions, events, settings snapshot and 1 Hz
+  series (pressure, excess leak, total leak, flow amplitude, snore). About
+  0.5-1 MB per night, so ~700 nights fit in well under 1 GB.
+- Not stored by default: the raw 50 Hz waveforms (18-32 MB per night). The
+  night view shows 1 Hz data; when the card or a card copy is available it
+  can load the full 50 Hz waveform for a zoomed-in window. An optional
+  "Keep full copies of night files" setting can archive them later.
+- Re-importing the same card only reads new or changed nights (keyed by file
+  name, size and modified time).
 
 ## 4. UX and UI
 
@@ -110,11 +143,13 @@ interface Channel { hz: number; unit: string; data: Float32Array; }
 
 ### Screens
 
-1. **Drop** (first visit)
-   - Headline: "Understand your CPAP data". Sub: "Drag your SD card folder
-     here. Nothing leaves your computer."
-   - Large dashed drop zone, "Choose folder" button, "Try with sample data"
-     link (synthetic night), "How do I copy my SD card?" helper with pictures.
+1. **Import** (first launch)
+   - Headline: "Understand your CPAP data". Sub: "Choose your SD card. Your
+     data is copied to this computer and never leaves it."
+   - Drop zone (drag the card or folder onto the window), "Choose SD card…"
+     button using the native folder picker, "Try with sample data" link,
+     and a hint when an SD card is detected under `/Volumes`.
+   - After import: "You can put the card back in your machine."
    - Supported machines listed below.
    - States: drag-over highlight, reading with progress, unsupported card
      (shows detected folder names and a "request support" link that prefills
@@ -140,7 +175,9 @@ interface Channel { hz: number; unit: string; data: Float32Array; }
    - One printable page (print CSS, also "Save as PDF"): date range,
      compliance, averages, worst nights, settings history, plain-language
      notes and the disclaimer.
-6. **Learn** (glossary): AHI, leak, EPR, ramp, central vs obstructive,
+6. **Settings**: data folder location, export, delete all data, theme,
+   pressure unit display.
+7. **Learn** (glossary): AHI, leak, EPR, ramp, central vs obstructive,
    written for patients and linked from every "What this means".
 
 ### Responsive rules
@@ -148,12 +185,11 @@ interface Channel { hz: number; unit: string; data: Float32Array; }
 - Design at 1920 first; 1280 keeps the same arrangement (side navigation and
   side panels stay beside the content, grids reflow), cards never stretch to
   full width. Stack into columns before stacking into one long column.
-- Tablet 768-1024: two-column tiles, charts full width.
-- Phone 360-430: single column, bottom tab bar (Overview, Trends, Report,
-  Learn), 44 px tap targets, charts one per view, no horizontal page scroll.
-- Drag and drop is a desktop idea; on phones the primary action is
-  "Choose folder / zip" (Android Chrome supports folders; iOS supports zip
-  from Files).
+- Desktop window sizes: minimum window 960 × 640; narrow windows (under
+  ~900 px) collapse the side navigation to icons and stack side panels below
+  the content.
+- No phone layout: SleepLens is a desktop app. (A phone companion is out of
+  scope.)
 - Light and dark themes from tokens; status colours also carry an icon and a
   word so colour is never the only cue (WCAG AA).
 - Motion: none by default. At most a gentle count-up on the hero number and
@@ -198,60 +234,75 @@ Resolved by cross-checking against Aeonmed's NeoRead reader (see
 - Report rules: a valid day is over 4 hours; morning event blocks belong to
   the previous date.
 
-Still open:
-- Check the new fields against NeoRead's report for 3 nights on the real card
-  (NeoRead runs on Windows only): SNI, large-leak minutes, which leak channel
-  matches the machine's screen, `E4`-`E8`, and the pressure unit values.
+Checked on the real card (2026-11-09): every value on the machine's
+"Last night" screen matches the `.bkp` summary; pressure unit 1 = hPa;
+LEAK90 behaves as minutes above 90 L/min. Still open: `E4`-`E6` (never seen on
+this firmware) and a night with a real large leak.
 
-### Phase 1: skeleton and drop flow
-- Vite + React + TS app, tokens, layout shell at all breakpoints.
-- Drop zone, folder walking, zip support, worker plumbing, progress.
-- Machine detection and the "unsupported card" path.
-- Exit: dropping any folder lists recognised nights with dates and sizes.
+### Phase 1: Rust core
+- `sleeplens-core`: port the AS2X parser (`.dat`, `.bkp`, settings,
+  detection) from the TypeScript reference, with the NeoRead and
+  machine-screen findings.
+- `sleeplens-cli inspect` matching the Node inspector's output.
+- Exit: `cargo test` passes on the synthetic fixture and the CLI's numbers
+  match the TypeScript inspector on the real card (all 690 nights).
 
-### Phase 2: AS2X parser and nightly summary
-- Streaming parser for `.dat` and `.bkp`, summary pass, IndexedDB cache.
-- Overview screen with usage, pressure and leak (events marked "estimated"
-  or hidden until Phase 0 answers whether they are stored).
-- Exit: the author's 689 nights load, last night's summary matches the
-  machine's own screen readout for 5 sampled nights.
+### Phase 2: desktop app skeleton (macOS)
+- Tauri 2 project in `app/`, strict CSP, no network permissions.
+- Import flow: native folder picker and drag-onto-window, background import
+  thread with progress events, SQLite store in the app-data folder,
+  incremental re-import.
+- Typed commands: `import_card`, `import_progress`, `list_nights`,
+  `night_detail`, `trends`, `device_info`, `settings_history`,
+  `data_location`, `delete_all_data`.
+- Exit: importing the real card stores 690 nights; last night's summary in the
+  app equals the machine's screen.
 
-### Phase 3: night detail and trends
-- uPlot charts with shared zoom; session timeline; trends with heatmap.
-- Exit: one night's waveforms render in under 1 s on a mid-range laptop.
+### Phase 3: UI
+- Overview, Night (uPlot, 1 Hz series, events as markers, session
+  timeline), Trends (range switcher, usage calendar, AHI/leak lines,
+  settings-change markers), Settings, Learn; built from the demo design.
+- Exit: design critique at 1920 and 1280 window widths and a narrow window,
+  light and dark, fixes applied; exploratory test pass.
 
-### Phase 4: report, glossary, polish
-- Print/PDF report, Learn pages, empty and error states, accessibility pass,
-  sample-data mode.
-- Exit: Lighthouse accessibility ≥ 95; design critique at 1920, 1280, tablet
-  and phone with fixes applied.
+### Phase 4: report and polish
+- Printable one-page report (print to PDF from the web view), empty and error
+  states, accessibility pass (keyboard, VoiceOver, contrast), sample-data
+  mode, app icon, signed and notarised `.dmg`.
+- Exit: v0.1.0 `.dmg` for macOS.
 
-### Phase 5: ResMed support and release
-- EDF+ reader, ResMed `STR.edf` summary and `DATALOG` sessions, mapped to the
-  same model. This is the largest user group and the biggest win for others.
-- GitHub Pages deploy, README screenshots, `CONTRIBUTING.md` with a "write a
-  parser" guide, issue templates (support request with names only).
-- Exit: v0.1.0 tagged and live.
+### Phase 5: Windows (future)
+- Build and test the same app on Windows 10/11 (WebView2), `.msi` installer,
+  SD card detection by removable drive letters, `%APPDATA%` data folder,
+  code signing.
+- Exit: the same fixture and a real card import on Windows.
+
+### Phase 6: ResMed support
+- EDF+ reader, ResMed `STR.edf` summary and `DATALOG` sessions in
+  `sleeplens-core`, mapped to the same model.
 
 ### Later / help wanted
 - Philips DreamStation, Luna/BMC, Resvent parsers.
 - Event detection from flow for machines without stored events (clearly
   labelled as estimated, validated against ResMed nights that do have events).
-- PWA install, compare two date ranges, export CSV.
+- Compare two date ranges, export CSV, optional archive of raw night files.
 
 ## 6. Testing
 
-- **Parser unit tests** on synthetic and anonymised fixtures only.
-- **Golden tests**: summary metrics for fixture nights checked in as JSON.
-- **End-to-end** (Playwright): drop a fixture folder, zip and unsupported
-  folder; check every screen at 1920, 1280, 768 and 390 widths.
-- **Large-card test**: generated 700-night synthetic card to check memory
-  stays under ~500 MB and the summary pass finishes in reasonable time.
-- **Exploratory pass** before each release: rapid drops, cancelling mid-read,
-  back/refresh, keyboard only, dark mode.
-- **Privacy check in CI**: fail if any `fetch`/`XMLHttpRequest`/beacon call is
-  added outside the static asset loader, and if any `.dat`/`.edf`/`.bkp` file
-  is committed.
+- **Core unit tests** (`cargo test`) on synthetic and anonymised fixtures
+  only; golden JSON for fixture nights shared with the TypeScript tests.
+- **Parity check**: the Rust CLI and the TypeScript inspector must print the
+  same numbers on the real card before the TypeScript code is retired.
+- **Store tests**: import the fixture twice; the second import adds nothing.
+- **App end-to-end**: import the fixture, visit every screen at 1920, 1280
+  and a narrow window, light and dark.
+- **Large-card test**: generated 700-night synthetic card; import stays under
+  ~500 MB memory and shows steady progress.
+- **Exploratory pass** before each release: cancel mid-import, re-import,
+  remove the card during import, keyboard only, dark mode.
+- **Privacy check**: the Tauri config grants no network or shell
+  permissions, the CSP blocks remote origins, and CI fails if any
+  `.dat`/`.edf`/`.bkp` file outside the synthetic fixture is committed.
 
 ## 7. Risks
 
@@ -259,6 +310,8 @@ Still open:
 | --- | --- |
 | AS2X channel map cannot be fully decoded | Ship usage, sessions and settings first (already clear); label uncertain channels |
 | No stored events on AS2X | Show "not recorded by this machine"; flow-based estimate later, labelled |
-| Browser memory on huge cards | Streaming summary pass, waveforms only for the open night |
+| Memory on huge cards | One night parsed at a time on a worker thread; only 1 Hz series kept |
+| Windows differences (paths, WebView2, drive letters) | No platform APIs in core; platform code behind one module; Windows CI build from Phase 2 |
+| Unsigned app warnings on macOS | Sign and notarise the `.dmg` in Phase 4 |
 | People read it as diagnosis | Plain disclaimer, no setting advice, thresholds marked as general guides |
 | Real data leaking into the repo | `.gitignore`, CI check, fixture anonymiser script |

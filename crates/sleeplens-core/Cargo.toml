@@ -1,0 +1,17 @@
+[package]
+name = "sleeplens-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Offline, portable CPAP card parsing and night assembly"
+
+[features]
+default = ["fs"]
+fs = []
+
+[dependencies]
+serde.workspace = true
+chrono.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

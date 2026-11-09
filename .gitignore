@@ -12,6 +12,7 @@ private-data/
 fixtures/private/
 
 node_modules/
+target/
 dist/
 .DS_Store
 *.log
