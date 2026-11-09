@@ -2894,6 +2894,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sleeplens-psg"
+version = "0.1.0"
+dependencies = [
+ "sleeplens-core",
+]
+
+[[package]]
 name = "smallvec"
 version = "1.16.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

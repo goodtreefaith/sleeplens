@@ -21,3 +21,4 @@
 .score-rem-row{position:relative}.score-rem-row .score-contributor{padding-right:28px}.score-rem-help{position:absolute;right:0;top:12px}.score-rem-help .help-wrap{position:static}
 
 .stage-summary-list .stage-key,.hypnogram-legend .stage-key,.stage-no-data-key{width:12px;height:12px;min-width:12px;flex:0 0 12px}.stage-row-label{white-space:nowrap}.stage-summary-list dt>.help-wrap{margin-inline:0}
+.stage-uncertain-note{margin:8px 0 0;font-size:var(--text-sm);color:var(--muted);line-height:1.45}

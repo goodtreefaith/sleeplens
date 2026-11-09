@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { SleepStageEstimate } from "../api/types";
-import { Hypnogram, StageSummary } from "./SleepStages";
+import { Hypnogram, StageSummary, uncertaintySummary } from "./SleepStages";
 import { wallSeconds } from "../lib/dates";
 
 const stages: SleepStageEstimate = { start: "2026-11-08T23:00:00", epochSeconds: 1800, stages: ["wake", "light", "noData", "deep", "rem", "uncertain"], minutes: { wake: 30, light: 30, deep: 30, rem: 30, uncertain: 30 }, confidence: { sleepWake: "moderate", rem: "low", deep: "veryLow" }, signalQuality: .8, estimatorVersion: 3 };
@@ -49,8 +49,7 @@ describe("shared sleep stages", () => {
     expect(html).not.toContain('<title>REM,');
     expect(html).toContain('stroke="var(--stage-outline)"');
   });
-  it("summarizes simple Non-REM as light plus deep and shows uncertainty and confidence", () => {
-    const html = renderToStaticMarkup(createElement(StageSummary, { minutes: stages.minutes, stages }));
+  it("summarizes simple Non-REM as light plus deep and shows uncertainty and confidence", () => {    const html = renderToStaticMarkup(createElement(StageSummary, { minutes: stages.minutes, stages }));
     expect(html.match(/role="meter"/g)).toHaveLength(4);
     expect(html).toContain('<b>40%</b>');
     expect(html).toContain('Non-REM share. Typical adult range 65 to 80 percent.');
@@ -65,5 +64,34 @@ describe("shared sleep stages", () => {
     expect(detailed.match(/role="meter"/g)).toHaveLength(5);
     expect(detailed).toContain('Very low');
     expect(detailed).toContain('Deep sleep is the least reliable part of this estimate.');
+  });
+
+  it("explains uncertain time with its longest confounder instead of only showing it", () => {
+    const withRuns = {
+      ...stages,
+      uncertainRuns: [
+        { firstEpoch: 10, epochs: 6, reason: "largeLeak" as const },
+        { firstEpoch: 40, epochs: 20, reason: "breathingEvent" as const }
+      ]
+    };
+    const note = uncertaintySummary(withRuns);
+    expect(note).toContain("could not support a stage");
+    // The longest run names its cause; the shorter one does not appear.
+    expect(note).toContain("a breathing event");
+    expect(note).not.toContain("mask leak");
+    const html = renderToStaticMarkup(createElement(StageSummary, { minutes: stages.minutes, stages: withRuns }));
+    expect(html).toContain("stage-uncertain-note");
+  });
+
+  it("says nothing about uncertainty when there is none", () => {
+    expect(uncertaintySummary({ ...stages, minutes: { ...stages.minutes, uncertain: 0 } })).toBeNull();
+  });
+
+  it("flags periodic breathing as a confounder worth raising at review", () => {
+    const html = renderToStaticMarkup(
+      createElement(StageSummary, { minutes: stages.minutes, stages: { ...stages, periodicBreathing: true } })
+    );
+    expect(html).toContain("waxes and wanes");
+    expect(html).toContain("not scored as REM or Deep");
   });
 });

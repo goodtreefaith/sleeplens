@@ -929,6 +929,8 @@ mod tests {
             confidence: Default::default(),
             signal_quality: 0.8,
             estimator_version: ESTIMATOR_VERSION,
+            uncertain_runs: Vec::new(),
+            periodic_breathing: false,
         };
         let blob = encode_stages(&estimate).unwrap();
         assert_eq!(blob[0], 2);
@@ -971,6 +973,8 @@ mod tests {
             confidence: Default::default(),
             signal_quality: 0.0,
             estimator_version: ESTIMATOR_VERSION,
+            uncertain_runs: Vec::new(),
+            periodic_breathing: false,
         };
         let mut blob = encode_stages(&estimate).unwrap();
         assert!(decode_stages(&blob[..blob.len() - 1]).is_err());

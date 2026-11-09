@@ -36,6 +36,9 @@ it("explains v2.2 stage uncertainty and pressure concepts in the appropriate Lea
     expect(sentences.length).toBeGreaterThanOrEqual(2);
     expect(sentences.length).toBeLessThanOrEqual(3);
   });
-  ["sleepWakeConfidence", "remConfidence", "deepConfidence"].forEach(key => expect(glossaryEntry(key)!.body[0]).toMatch(/^Studies comparing breathing-only estimates with sleep-lab tests find/));
+  // These entries now cite SleepLens's own measurements rather than only the
+  // literature. They must still say plainly that the stage split is unreliable.
+  ["sleepWakeConfidence", "remConfidence", "deepConfidence"].forEach(key =>
+    expect(glossaryEntry(key)!.body[0]).toMatch(/sleep-lab recordings|least reliable|often missed/));
   expect(glossaryEntry("remSleepScore")!.body.join(" ")).toContain("Deep sleep is not scored");
 });

@@ -233,6 +233,8 @@ export interface SleepLensApi {
 export type Period = "week" | "month" | "6months" | "year";
 export type SleepStage = "wake" | "light" | "deep" | "rem" | "uncertain" | "noData";
 export interface StageMinutes { wake: number; light: number; deep: number; rem: number; uncertain: number }
+export type Confounder = "largeLeak" | "artifact" | "breathingEvent" | "periodicBreathing";
+export interface UncertaintyRun { firstEpoch: number; epochs: number; reason: Confounder }
 export interface SleepStageEstimate {
   start: string;
   epochSeconds: number;
@@ -241,6 +243,10 @@ export interface SleepStageEstimate {
   signalQuality: number;
   confidence: { sleepWake: "moderate"; rem: "low"; deep: "veryLow" };
   estimatorVersion: number;
+  /** Why uncertain time is uncertain, longest runs first. */
+  uncertainRuns?: UncertaintyRun[];
+  /** Crescendo-decrescendo breathing was seen; leak or cardiac causes are worth checking. */
+  periodicBreathing?: boolean;
 }
 export interface SleepScore {
   total: number;

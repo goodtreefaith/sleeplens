@@ -23,7 +23,22 @@ function StageModeControl({ mode, change }: { mode: StageMode; change: (mode: St
 function DetailedCaveat({ mode }: { mode: StageMode }) {
   return mode === "detailed" ? <p className="stage-caveat">Deep sleep is the least reliable part of this estimate.</p> : null;
 }
-export const STAGE_ESTIMATE_CAPTION = "Estimated from breathing, not a sleep study. SleepLens has not been validated against sleep-lab tests. Uncertain time means breathing was recorded but could not support a stage estimate.";
+const CONFOUNDER_LABEL: Record<string, string> = {
+  largeLeak: "mask leak",
+  artifact: "a recording artifact",
+  breathingEvent: "a breathing event and the breaths after it",
+  periodicBreathing: "periodic breathing"
+};
+export function uncertaintySummary(stages: SleepStageEstimate): string | null {
+  if (!stages.minutes.uncertain || stages.minutes.uncertain < 1) return null;
+  const runs = stages.uncertainRuns ?? [];
+  const longest = [...runs].sort((a, b) => b.epochs - a.epochs)[0];
+  const base = "Uncertain time means the breathing was recorded but could not support a stage.";
+  if (!longest) return base;
+  const minutes = Math.max(5, Math.round(longest.epochs * stages.epochSeconds / 60 / 5) * 5);
+  return `${base} The longest stretch, about ${minutes} min, was affected by ${CONFOUNDER_LABEL[longest.reason] ?? "a confounder"}.`;
+}
+export const STAGE_ESTIMATE_CAPTION = "Estimated from breathing, not a sleep study. Telling sleep from wake is the most reliable part; light, deep and REM are an experiment, and deep sleep is rarely detected. Uncertain time means breathing was recorded but could not support a stage estimate.";
 
 export function StageSummary({ minutes, stages, go, mode: override }: { minutes: StageMinutes | null; stages?: SleepStageEstimate | null; go?: Go; mode?: StageMode }) {
   const [selected, change] = useStageMode();
@@ -43,6 +58,8 @@ export function StageSummary({ minutes, stages, go, mode: override }: { minutes:
     </dd></div>;
   })}</dl><details className="stage-range-help"><summary><span className="typical-band-key" />Typical adult range <span className="stage-info-mark" aria-hidden="true">i</span></summary><p>The shaded bands show general adult ranges: awake 0–10%, {mode === "simple" ? "Non-REM 65–80%, and REM 20–25%" : "light 45–60%, deep 13–23%, and REM 20–25%"}. Sleep changes between people and nights. These breathing-based estimates cannot determine whether your sleep stages are normal. Percentages include uncertain time in the total recorded time. Uncertain time has no typical range.</p></details>
   <div className="stage-confidence"><h3>How sure is this?</h3><p><span>Asleep vs awake</span><b>Moderate</b><HelpTip term="sleepWakeConfidence" go={go} /></p><p><span>REM</span><b>Low</b><HelpTip term="remConfidence" go={go} /></p>{mode === "detailed" && <p><span>Deep</span><b>Very low</b><HelpTip term="deepConfidence" go={go} /></p>}</div>
+  {stages ? (() => { const note = uncertaintySummary(stages); return note ? <p className="stage-uncertain-note">{note}</p> : null; })() : null}
+  {stages?.periodicBreathing ? <p className="stage-uncertain-note">Breathing that waxes and wanes was seen. That can follow a mask leak or a heart-failure pattern, so it is not scored as REM or Deep. Worth mentioning at your next review.</p> : null}
   {cycles !== null ? <details className="stage-cycle-help"><summary>About {cycles} sleep {cycles === 1 ? "cycle" : "cycles"} (estimated) <span className="stage-info-mark" aria-hidden="true">i</span></summary><p>Each estimated REM period counts as one cycle, with at least one cycle when any sleep is estimated. Breathing data cannot measure complete sleep cycles, so this count is only a rough guide.</p></details> : null}
   <p className="estimate-label">{STAGE_ESTIMATE_CAPTION}</p></div>;
 }

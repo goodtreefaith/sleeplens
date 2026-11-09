@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/sleeplens-core", "crates/sleeplens-cli", "app/src-tauri"]
+members = ["crates/sleeplens-core", "crates/sleeplens-cli", "app/src-tauri", "crates/sleeplens-psg"]
 # app/src-tauri can join the workspace when the desktop shell is added.
 resolver = "2"
 

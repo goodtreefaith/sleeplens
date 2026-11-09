@@ -1,0 +1,9 @@
+[package]
+name = "sleeplens-psg"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Read polysomnography signals and hypnograms to measure SleepLens stage accuracy"
+
+[dependencies]
+sleeplens-core = { path = "../sleeplens-core" }

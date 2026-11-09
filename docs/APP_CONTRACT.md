@@ -403,3 +403,59 @@ sources in `docs/PRESSURE_INSIGHTS.md`):
 ### v2.2 calibration, 2026-11-09
 
 Near-boundary night counts and pressure tips use the P90-or-recorded-time definitions in the v2.2 table. A coarse P90 of 7.5 against maximum 8 with 6% of recorded time near maximum does not qualify. Floor-event severity now depends on event burden across at least three qualifying nights; a large share alone does not trigger a tip. The calibration uses synthetic regression coverage and does not require reading real cards.
+
+## Version 3 changes (2026-11-09): estimator v4 and measured accuracy
+
+Method and measurements: `docs/SLEEP_STAGE_METHOD.md`. `estimatorVersion` is 4.
+
+### Estimator v4 changes
+
+The whole stage estimate was rebuilt around a measured signal path and a
+threshold-based evidence model. Field-compatible additions only:
+
+```ts
+type Confounder = "largeLeak" | "artifact" | "breathingEvent" | "periodicBreathing";
+
+interface UncertaintyRun {
+  firstEpoch: number;              // index into `stages`
+  epochs: number;                  // run length in epochs
+  reason: Confounder;
+}
+
+interface SleepStageEstimate {
+  // … v2.2 fields, with estimatorVersion: 4 …
+  uncertainRuns: UncertaintyRun[]; // longest runs first; explains the uncertain minutes
+  periodicBreathing: boolean;      // crescendo-decrescendo breathing was seen
+}
+```
+
+Both new fields are optional in the UI types so a v3 blob still renders, but a
+v4 estimate always sends them.
+
+Behavioural rules the UI relies on:
+
+- The decoder never votes on `uncertain`. Those epochs break the stage chain, so a
+  guess is not smoothed across uninterpretable time.
+- `uncertainRuns` covers only observed epochs that could not be staged, not mask-off
+  gaps. Gaps stay `noData`.
+- `periodicBreathing` is a confounder flag, not a diagnosis. The UI must not present
+  it as Cheyne–Stokes, and must not attribute it to heart failure.
+
+### UI additions
+
+- The stage summary explains uncertain time by naming the longest run's cause, e.g.
+  "The longest stretch, about 15 min, was affected by a breathing event and the
+  breaths after it." Text lives in `SleepStages.tsx`; the cause must never be shown
+  as a diagnosis.
+- `periodicBreathing` adds one line saying waxing and waning was seen, that it is not
+  scored as REM or Deep, and that it is worth raising at review.
+- `TYPICAL_STAGE_RANGES` and the confidence labels are unchanged.
+
+### Accuracy
+
+SleepLens now *measures* its stage accuracy instead of asserting it, using
+`crates/sleeplens-psg` and the `sleep-eval` binary against expert-scored
+polysomnography. Current four-class agreement is below the always-Light baseline on
+the small sample measured so far; sleep versus wake is the only granularity that
+clearly beats chance. `docs/SLEEP_STAGE_METHOD.md` reports the numbers, the sample
+size, and the caveats. No UI claim may exceed what that document supports.

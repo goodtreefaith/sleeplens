@@ -191,11 +191,23 @@ fn event_end_context_and_recovery_are_uncertain_not_rem() {
     });
     let event_end = 145 * 60 + 15;
     let result = estimate_with_events(&flow, &[], &[u32::MAX, event_end + 300, event_end]);
-    // End - 40 s through end + 30 s spans these three epochs.
-    for epoch in (event_end - 40) / 30..=event_end.div_ceil(30) {
-        assert_eq!(result.stages[epoch as usize], SleepStage::Uncertain);
-        assert_ne!(result.stages[epoch as usize], SleepStage::Rem);
+    // The confounded span is the event epoch, the one before it (events are
+    // reported at their end) and the three after it, where recovery breaths sit.
+    // Those are exactly the epochs most likely to be mistaken for REM.
+    let first = event_end / 30 - 1;
+    let last = event_end / 30 + 3;
+    for epoch in first..=last {
+        assert_eq!(
+            result.stages[epoch as usize],
+            SleepStage::Uncertain,
+            "epoch {epoch} should be uncertain"
+        );
     }
+    // Recovery breaths must never be claimed as REM, which is the confusion the
+    // evidence review calls out for exactly this situation.
+    assert!(result.stages[first as usize..=last as usize]
+        .iter()
+        .all(|s| *s != SleepStage::Rem));
     assert!(fraction(&result, 100, 120, SleepStage::Uncertain) < 0.1);
 }
 
@@ -401,14 +413,18 @@ fn gaps_stay_no_data_and_partial_epochs_count_only_observed_time() {
 }
 
 #[test]
-fn version_three_serializes_uncertainty_and_evidence_confidence() {
+fn version_four_serializes_uncertainty_evidence_and_confounders() {
     let flow = breathing(10, |_| (4.0, 0.05, 22.0, 0.05, 0.0));
     let result = estimate(&flow, &[]);
-    assert_eq!(ESTIMATOR_VERSION, 3);
-    assert_eq!(result.estimator_version, 3);
+    assert_eq!(ESTIMATOR_VERSION, 4);
+    assert_eq!(result.estimator_version, 4);
     assert_eq!(result, estimate(&flow, &[]));
     let value = serde_json::to_value(&result).unwrap();
-    assert_eq!(value["estimatorVersion"], 3);
+    assert_eq!(value["estimatorVersion"], 4);
+    // Version 4 adds the machine-readable uncertainty reasons and the periodic
+    // breathing flag, so a UI can explain a gap instead of only showing one.
+    assert!(value["uncertainRuns"].is_array());
+    assert!(value["periodicBreathing"].is_boolean());
     assert_eq!(
         value["confidence"],
         serde_json::json!({
