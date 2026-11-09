@@ -53,6 +53,14 @@ fn trends(
     lock_store(&state.store)?.trends(from.as_deref(), to.as_deref())
 }
 #[tauri::command]
+fn period_summary(
+    state: State<'_, AppState>,
+    period: String,
+    end: Option<String>,
+) -> AppResult<sleeplens_core::PeriodSummary> {
+    lock_store(&state.store)?.period_summary(&period, end.as_deref())
+}
+#[tauri::command]
 fn settings_history(state: State<'_, AppState>) -> AppResult<Vec<SettingsChange>> {
     lock_store(&state.store)?.settings_history()
 }
@@ -190,6 +198,7 @@ pub fn run() {
             list_nights,
             night_detail,
             trends,
+            period_summary,
             settings_history,
             delete_all_data,
             load_sample_data

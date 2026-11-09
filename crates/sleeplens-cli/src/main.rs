@@ -4,6 +4,9 @@ use sleeplens_core::{
     dat::{parse_dat_header, summarize_dat, DatSummary},
     detect::detect_as2x,
     source::{CardSource, FsCardSource},
+    stream_card_with_backup,
+    tips::night_tips,
+    Night,
 };
 use std::{collections::BTreeMap, process::ExitCode};
 
@@ -13,6 +16,7 @@ struct Row {
     session: Option<SessionSummary>,
     events: Vec<TherapyEvent>,
     json: Value,
+    night: Night,
 }
 fn round1(n: f64) -> f64 {
     (n * 10.0).round() / 10.0
@@ -127,18 +131,52 @@ fn run() -> Result<(), (u8, String)> {
         } else {
             Vec::new()
         };
+        let mut selected = detection.clone();
+        selected.nights = vec![file.clone()];
+        let mut assembled = None;
+        stream_card_with_backup(&source, &selected, bkp.as_ref(), |night| {
+            assembled = Some(night);
+        })
+        .map_err(io_error)?;
+        let mut night = assembled.expect("selected night was assembled");
+        if let Some(previous) = rows
+            .last()
+            .and_then(|row: &Row| row.night.settings.as_ref())
+        {
+            night.list.prescription_changed |= night
+                .settings
+                .as_ref()
+                .is_some_and(|settings| sleeplens_core::prescription_differs(previous, settings));
+        }
+        let recent: Vec<_> = rows
+            .iter()
+            .rev()
+            .take(7)
+            .map(|row: &Row| row.night.clone())
+            .collect();
+        night.tips = night_tips(&night, &recent);
         let mut counts = BTreeMap::new();
         for e in &events {
             *counts.entry(e.event_type.clone()).or_insert(0usize) += 1;
         }
         let machine = session.is_some();
-        let value = json!({"date": file.date, "file": redact(&file.path), "start": sum.start.as_ref().map(|t| &t.iso), "end": sum.end.as_ref().map(|t| &t.iso), "usageMinutes":session.as_ref().map_or(round1(sum.usage_minutes), |s| s.usage_minutes), "usageSource":if machine {"summary"} else {"dat"}, "pressureMean":session.as_ref().map_or(round1(sum.pressure.mean),|s|s.pressure.mean),"pressureP90":session.as_ref().map_or(sum.pressure.p90,|s|s.pressure.p90),"pressureSource":if machine {"summary"} else {"dat"},"datUsageMinutes":round1(sum.usage_minutes),"datPressureMean":round1(sum.pressure.mean),"datPressureP90":sum.pressure.p90,"activeIntervals":sum.sessions.len(),"leakMedian":sum.total_leak.median,"leakFlowMedian":sum.excess_leak.median,"excessLeakMedian":sum.excess_leak.median,"totalLeakMedian":sum.total_leak.median,"largeLeakMinutes":session.as_ref().map(|s|s.large_leak_minutes),"session":session,"eventCounts":if machine {Some(counts)} else {None},"sessions":sum.sessions.iter().map(|s|json!({"start":s.start.iso,"end":s.end.iso,"minutes":round1(s.minutes)})).collect::<Vec<_>>(),"recordCount":sum.record_count,"invalidRecords":sum.invalid_records});
+        let mut value = json!({"date": file.date, "file": redact(&file.path), "start": sum.start.as_ref().map(|t| &t.iso), "end": sum.end.as_ref().map(|t| &t.iso), "usageMinutes":session.as_ref().map_or(round1(sum.usage_minutes), |s| s.usage_minutes), "usageSource":if machine {"summary"} else {"dat"}, "pressureMean":session.as_ref().map_or(round1(sum.pressure.mean),|s|s.pressure.mean),"pressureP90":session.as_ref().map_or(sum.pressure.p90,|s|s.pressure.p90),"pressureSource":if machine {"summary"} else {"dat"},"datUsageMinutes":round1(sum.usage_minutes),"datPressureMean":round1(sum.pressure.mean),"datPressureP90":sum.pressure.p90,"activeIntervals":sum.sessions.len(),"leakMedian":sum.total_leak.median,"leakFlowMedian":sum.excess_leak.median,"excessLeakMedian":sum.excess_leak.median,"totalLeakMedian":sum.total_leak.median,"largeLeakMinutes":session.as_ref().map(|s|s.large_leak_minutes),"session":session,"eventCounts":if machine {Some(counts)} else {None},"sessions":sum.sessions.iter().map(|s|json!({"start":s.start.iso,"end":s.end.iso,"minutes":round1(s.minutes)})).collect::<Vec<_>>(),"recordCount":sum.record_count,"invalidRecords":sum.invalid_records});
+        value["sleepScore"] = json!(night.list.sleep_score);
+        value["excessLeakP95"] = json!(night.list.excess_leak_p95);
+        value["interruptions"] = json!(night.list.interruptions);
+        value["score"] = json!(night.score);
+        value["stages"] = json!(night.stages);
+        value["tips"] = json!(night.tips);
+        // Keep recent summary context without retaining each night's 1 Hz arrays.
+        night.series = None;
+        night.events.clear();
         rows.push(Row {
             date: file.date.clone(),
             sum,
             session,
             events,
             json: value,
+            night,
         });
     }
     if rows.is_empty() {
@@ -254,6 +292,27 @@ fn run() -> Result<(), (u8, String)> {
                 .unwrap_or_else(|| "-".into()),
             events
         );
+        if let Some(score) = &r.night.score {
+            println!(
+                "  estimated sleep score: {}/100 ({})",
+                score.total, score.label
+            );
+        } else {
+            println!("  estimated sleep score: unavailable for nights under 30 minutes");
+        }
+        if let Some(stages) = &r.night.stages {
+            println!(
+                "  estimated stages: wake {:.1}, light {:.1}, deep {:.1}, REM {:.1} min; signal quality {:.0}%",
+                stages.minutes.wake,
+                stages.minutes.light,
+                stages.minutes.deep,
+                stages.minutes.rem,
+                stages.signal_quality * 100.0
+            );
+        }
+        for tip in &r.night.tips {
+            println!("  {}: {}", tip.title, tip.body);
+        }
     }
     println!("pressure in {}{}; usage, mean and p90 from the bkp session summary when there is one; excess leak = median L/min of slots 270-319; large leak min = minutes above 90 L/min",unit,if label == Some("hPa") {" (about the same number in cmH2O)"} else {" (pressure unit byte not recognised)"});
     if rows.iter().any(|r| r.session.is_none()) {

@@ -1,19 +1,21 @@
+import { useState } from "react";
 import type { TrendPoint } from "../api/types";
 import { addDays, dateMs, daysInclusive, DAY_MS } from "../lib/dates";
 import { hm, monthYear, shortDate, shortDateY } from "../lib/format";
 import { useWidth } from "../lib/useWidth";
 
-/** Small line chart with a guide line and settings-change markers. */
-export function LineChart({ points, from, to, value, guide, guideLabel, unit, aria, onPick }: {
+/** Small line chart with a guide line and prescription-change markers. */
+export function LineChart({ points, from, to, value, guide, guideLabel, unit, aria, onPick, changeDescriptions = {}, max }: {
   points: TrendPoint[]; from: string; to: string;
   value: (p: TrendPoint) => number | null;
-  guide?: number; guideLabel?: string; unit: string; aria: string;
+  guide?: number; guideLabel?: string; changeDescriptions?: Record<string, string>; max?: number; unit: string; aria: string;
   onPick: (d: string) => void;
 }) {
   const [ref, w] = useWidth<HTMLDivElement>();
+  const [activeMarker, setActiveMarker] = useState<string | null>(null);
   const h = 170, padL = 36, padR = 8, padT = 24, padB = 24;
   const vals = points.map(value).filter((v): v is number => v != null);
-  const maxV = Math.max(guide ?? 0, ...vals, 1) * 1.15;
+  const maxV = max ?? Math.max(guide ?? 0, ...vals, 1) * 1.15;
   const minV = 0;
   const x0 = dateMs(from), x1 = dateMs(to) + DAY_MS;
   const sx = (d: string) => padL + ((dateMs(d) + DAY_MS / 2 - x0) / (x1 - x0)) * (w - padL - padR);
@@ -31,10 +33,12 @@ export function LineChart({ points, from, to, value, guide, guideLabel, unit, ar
   if (cur) segs.push(cur);
   const ticksY = niceTicks(maxV);
   const xt = dateTicks(from, to, w);
-  const changes = points.filter((p) => p.settingsChanged);
+  const changes = points.filter((p) => p.prescriptionChanged);
   const dots = points.length <= 40;
   return (
     <div className="chartwrap" ref={ref}>
+      {guideLabel ? <p className="chart-guide-label">General guide: {guideLabel}</p> : null}
+      {activeMarker ? <p className="chart-marker-tooltip" role="status">{activeMarker}</p> : null}
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label={aria}>
         {ticksY.map((t) => (
           <g key={t}>
@@ -45,25 +49,26 @@ export function LineChart({ points, from, to, value, guide, guideLabel, unit, ar
         {guide != null ? (
           <g>
             <line className="guide" x1={padL} x2={w - padR} y1={sy(guide)} y2={sy(guide)} />
-            {guideLabel ? <text className="tick" x={padL + 4} y={h - padB - 4} textAnchor="start">{guideLabel}</text> : null}
           </g>
         ) : null}
-        {changes.map((c) => (
-          <g key={c.date}>
-            <line className="mk" x1={sx(c.date)} x2={sx(c.date)} y1={padT - 6} y2={h - padB} />
-            <text className="mk-l" x={sx(c.date) > w - 110 ? sx(c.date) - 4 : sx(c.date) + 4} y={12} textAnchor={sx(c.date) > w - 110 ? "end" : "start"}>Settings changed</text>
-          </g>
-        ))}
         {segs.map((d, i) => <path key={i} className="lineplot" d={d} />)}
         {dots ? points.map((p) => { const v = value(p); return v == null ? null : <circle key={p.date} cx={sx(p.date)} cy={sy(v)} r={2.5} fill="var(--accent)" />; }) : null}
         {xt.map((t) => <text key={t} className="tick" x={sx(t)} y={h - 6} textAnchor="middle">{shortDate(t)}</text>)}
         {points.map((p) => {
           const v = value(p);
           return (
-            <rect key={"h" + p.date} x={sx(p.date) - 4} y={padT} width={8} height={h - padT - padB} fill="transparent" style={{ cursor: "pointer" }} onClick={() => onPick(p.date)}>
+            <rect key={"h" + p.date} x={sx(p.date) - 4} y={padT} width={8} height={h - padT - padB} fill="transparent" style={{ cursor: "pointer" }} onClick={() => onPick(p.date)} tabIndex={0} role="button" aria-label={`${shortDateY(p.date)}, ${v == null ? "not recorded" : `${v.toFixed(1)} ${unit}`}. Open night`} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(p.date); } }}>
               <title>{`${shortDateY(p.date)}: ${v == null ? "not recorded" : `${v.toFixed(1)} ${unit}`}`}</title>
             </rect>
           );
+        })}
+        {changes.map((c) => {
+          const text = `${shortDateY(c.date)}: ${changeDescriptions[c.date] || "Mode or pressure prescription changed"}`;
+          return <g key={"change" + c.date} className="prescription-marker" tabIndex={0} role="img" aria-label={text} onFocus={() => setActiveMarker(text)} onBlur={() => setActiveMarker(null)} onMouseEnter={() => setActiveMarker(text)} onMouseLeave={() => setActiveMarker(null)} onKeyDown={(e) => { if (e.key === "Escape") setActiveMarker(null); }}>
+            <title>{text}</title>
+            <line className="mk" x1={sx(c.date)} x2={sx(c.date)} y1={padT - 6} y2={h - padB} />
+            <line x1={sx(c.date)} x2={sx(c.date)} y1={padT - 6} y2={h - padB} stroke="transparent" strokeWidth={10} />
+          </g>;
         })}
       </svg>
     </div>
@@ -88,6 +93,7 @@ function dateTicks(from: string, to: string, w: number): string[] {
 
 /** Usage calendar: one small month grid per month, a square per day, Monday first. */
 export function UsageCalendar({ points, from, to, last, onPick }: { points: TrendPoint[]; from: string; to: string; last: string; onPick: (d: string) => void }) {
+  const [calendarRef, calendarWidth] = useWidth<HTMLDivElement>();
   const by = new Map(points.map((p) => [p.date, p]));
   const months: string[] = [];
   for (let d = from.slice(0, 7) + "-01"; d <= to; ) {
@@ -96,9 +102,12 @@ export function UsageCalendar({ points, from, to, last, onPick }: { points: Tren
     d = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`;
   }
   const cell = 17, gap = 3, step = cell + gap;
+  const capacity = Math.max(1, Math.floor((calendarWidth + 24) / 158));
+  const rows = Math.max(1, Math.ceil(months.length / capacity));
+  const columns = Math.ceil(months.length / rows);
   const WD_LABEL: Record<number, string> = { 0: "M", 2: "W", 4: "F" };
   return (
-    <div className="heat-months heat">
+    <div className="heat-months heat balanced-months" ref={calendarRef} style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 138px))` }}>
       <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
         <defs>
           <pattern id="hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -107,9 +116,6 @@ export function UsageCalendar({ points, from, to, last, onPick }: { points: Tren
           </pattern>
         </defs>
       </svg>
-      <div className="heat-wd" aria-hidden="true" style={{ paddingTop: 22 }}>
-        {[0, 1, 2, 3, 4, 5, 6].map((r) => <span key={r} style={{ height: step }}>{WD_LABEL[r] ?? ""}</span>)}
-      </div>
       {months.map((m) => {
         const first = `${m}-01`;
         const [y, mo] = m.split("-").map(Number) as [number, number];
@@ -155,7 +161,7 @@ export function UsageCalendar({ points, from, to, last, onPick }: { points: Tren
         return (
           <div key={m} className="heat-month">
             <h3>{label}</h3>
-            <svg width={W} height={H} role="group" aria-label={`${label}: ${recorded} nights recorded, ${valid} with more than 4 hours.`}>{cells}</svg>
+            <div className="month-body"><div className="heat-wd" aria-hidden="true">{[0, 1, 2, 3, 4, 5, 6].map((r) => <span key={r} style={{ height: step }}>{WD_LABEL[r] ?? ""}</span>)}</div><svg width={W} height={H} role="group" aria-label={`${label}: ${recorded} nights recorded, ${valid} with more than 4 hours.`}>{cells}</svg></div>
           </div>
         );
       })}

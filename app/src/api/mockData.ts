@@ -1,8 +1,9 @@
 // Synthetic data for a fictional Aeonmed AS100A. Deterministic (seeded), so screenshots and tests are stable.
 // Nothing here comes from a real card.
+import { computeMockScore, estimateMockStages, nightTips } from "./mockV2";
 import { addDays, daysInclusive, secondsToWall, wallSeconds } from "../lib/dates";
 import type {
-  Device, EventCounts, NightDetail, NightListItem, Settings, SettingsChange, TherapyEvent
+  Device, EventCounts, NightDetail, NightListItem, Settings, SettingsChange, SleepScore, SleepStageEstimate, TherapyEvent
 } from "./types";
 
 export const MOCK_LAST_DATE = "2026-11-08";
@@ -59,6 +60,8 @@ interface NightPlan {
   index: number;
   sessions: { start: string; end: string; minutes: number }[];
   settings: Settings;
+  score: SleepScore | null;
+  stages: SleepStageEstimate;
 }
 
 function planNight(index: number): NightPlan | null {
@@ -83,7 +86,7 @@ function planNight(index: number): NightPlan | null {
   }
 
   const hours = usage / 60;
-  const ahiTarget = clamp(1.1 + (r() - 0.5) * 1.6 + (r() < 0.08 ? 1 : 0), 0.3, 2.5);
+  const ahiTarget = clamp(2.3 + (r() - 0.5) * 3.4 + (LEAK_NIGHTS.has(index) ? 5 : 0), 0.3, 9);
   const total = Math.max(Math.ceil(0.3 * hours), Math.round(ahiTarget * hours));
   const obstructive = Math.round(total * (0.35 + r() * 0.2));
   const central = Math.round((total - obstructive) * (0.25 + r() * 0.2));
@@ -104,12 +107,18 @@ function planNight(index: number): NightPlan | null {
     pressureMean: pMean,
     pressureP90: p90,
     pressureSource: hasAhi ? "machine" : "computed",
-    excessLeakMedian: leakNight ? round1(14 + r() * 8) : round1(1 + r() * 5),
+    excessLeakMedian: 0,
+    excessLeakP95: leakNight ? round1(30 + r() * 12) : round1(8 + r() * 14),
+    sleepScore: null,
+    interruptions: sessions.length - 1,
     largeLeakMinutes: hasAhi ? (leakNight ? Math.round(25 + r() * 55) : Math.round(r() * 3)) : null,
     eventCounts: hasAhi ? counts : { obstructive: 0, central: 0, hypopnea: 0 },
     settingsChanged: index === SETTINGS_CHANGE_INDEX
   };
-  return { item, index, sessions, settings };
+  const stages = estimateMockStages(item, sessions, index);
+  const score = computeMockScore(item, stages);
+  item.sleepScore = score?.total ?? null;
+  return { item, index, sessions, settings, stages, score };
 }
 
 let plansCache: NightPlan[] | null = null;
@@ -119,6 +128,10 @@ function plans(): NightPlan[] {
     for (let i = 0; i < MOCK_DAYS; i++) { const p = planNight(i); if (p) plansCache.push(p); }
   }
   return plansCache;
+}
+
+export function mockStageMinutes(date: string) {
+  return plans().find(p => p.item.date === date)?.stages.minutes ?? null;
 }
 
 export function mockNights(): NightListItem[] {
@@ -222,7 +235,8 @@ export function mockNightDetail(date: string): NightDetail | null {
       lastLevel = level;
     }
     leakNoise += (r() - 0.5) * 0.25 - leakNoise * 0.01;
-    let ex = Math.max(0, (item.excessLeakMedian ?? 3) * (LEAK_NIGHTS.has(plan.index) ? 0.35 : 1) + leakNoise * 0.7);
+    let ex = Math.max(0, leakNoise * 0.7);
+    if (!LEAK_NIGHTS.has(plan.index) && i % 900 >= 810) ex = item.excessLeakP95 ?? ex;
     for (const [a, b] of leakBlocks) if (i >= a && i <= b) ex = 38 + r() * 20;
     excess[i] = ex;
     flowBase += (r() - 0.5) * 0.5 - (flowBase - 28) * 0.01;
@@ -251,6 +265,9 @@ export function mockNightDetail(date: string): NightDetail | null {
   const hrs = item.usageMinutes / 60;
   const detail: NightDetail = {
     ...item,
+    score: plan.score,
+    stages: plan.stages,
+    tips: nightTips(item, mockNights().filter(n => n.date <= date && n.date >= addDays(date, -6)), plan.index === SETTINGS_CHANGE_INDEX),
     sessions,
     summary: item.ahi == null
       ? { startPressure: null, maxPressure: null, ai: null, cai: null, oai: null, hi: null, sni: null }

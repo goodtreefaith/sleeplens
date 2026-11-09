@@ -9,6 +9,7 @@ pub struct AppInfo {
     pub db_size_bytes: u64,
     pub device: Option<Device>,
     pub night_count: usize,
+    pub needs_reread: usize,
     pub first_date: Option<String>,
     pub last_date: Option<String>,
     pub last_import_at: Option<String>,
@@ -73,6 +74,9 @@ pub struct TrendPoint {
     pub pressure_p90: Option<f64>,
     pub excess_leak_median: Option<f64>,
     pub settings_changed: bool,
+    pub sleep_score: Option<u32>,
+    pub excess_leak_p95: Option<f64>,
+    pub prescription_changed: bool,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -87,5 +91,7 @@ pub struct Trends {
     pub avg_ahi: Option<f64>,
     pub avg_pressure_p90: Option<f64>,
     pub avg_excess_leak: Option<f64>,
+    pub avg_sleep_score: Option<f64>,
+    pub avg_excess_leak_p95: Option<f64>,
     pub points: Vec<TrendPoint>,
 }

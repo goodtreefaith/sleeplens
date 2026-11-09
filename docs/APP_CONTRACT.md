@@ -147,3 +147,160 @@ interface Trends {
 - A "valid night" is usage over 4 hours (240 min), the machine's rule.
 - The full serial number never reaches the UI.
 - No network access anywhere. The UI loads only bundled assets.
+
+## Version 2 additions (2026-11-09)
+
+Owner feedback after the first real-card test: better usability on Overview,
+a period choice (week / month / 6 months / year) on Overview, plain-language
+help next to technical words, estimated sleep stages and a 0-100 sleep score,
+and suggestions. Everything here is additive; v1 fields stay.
+
+### Changes to existing types
+
+```ts
+interface NightListItem {
+  // … v1 fields …
+  excessLeakP95: number | null;     // L/min, 95th percentile of slots 270-319 (the median is usually 0)
+  sleepScore: number | null;        // 0-100, SleepScore.total
+  interruptions: number;            // mask-off breaks longer than 1 min inside the night (sessions - 1)
+}
+
+interface NightDetail {
+  // … v1 fields …
+  score: SleepScore | null;
+  stages: SleepStageEstimate | null; // null if the night file was not imported
+  tips: Tip[];                       // for this night, most important first, max 4
+}
+
+interface Trends {
+  // … v1 fields …
+  avgSleepScore: number | null;
+  avgExcessLeakP95: number | null;
+  points: { /* v1 */ sleepScore: number | null; excessLeakP95: number | null; prescriptionChanged: boolean }[];
+  // prescriptionChanged: mode or pressure settings changed (humidifier/ramp changes are NOT markers)
+}
+```
+
+### New command
+
+| Command | Args | Returns |
+| --- | --- | --- |
+| `period_summary` | `{ period: "week" \| "month" \| "6months" \| "year", end?: string }` | `PeriodSummary` (`end` defaults to the latest night; the period is the N days ending on `end`: 7, 30, 182, 365) |
+
+```ts
+interface PeriodSummary {
+  period: "week" | "month" | "6months" | "year";
+  from: string; to: string; daysInRange: number;
+  nights: number; validNights: number; compliancePct: number;
+  avgUsageMinutes: number | null;
+  avgAhi: number | null;
+  avgSleepScore: number | null;
+  avgExcessLeakP95: number | null;
+  avgPressureP90: number | null;
+  avgStageMinutes: StageMinutes | null;     // per night with stages
+  previous: {                               // same-length period just before; null fields if no data
+    avgUsageMinutes: number | null; avgAhi: number | null; avgSleepScore: number | null; compliancePct: number | null;
+  };
+  bestNight: { date: string; sleepScore: number } | null;
+  worstNight: { date: string; sleepScore: number } | null;
+  scoreSeries: { date: string; sleepScore: number | null; usageMinutes: number }[];  // one per day in range
+  tips: Tip[];                              // for this period, most important first, max 5
+}
+```
+
+### New types
+
+```ts
+type SleepStage = "wake" | "light" | "deep" | "rem" | "noData";
+
+interface StageMinutes { wake: number; light: number; deep: number; rem: number }
+
+interface SleepStageEstimate {
+  start: string;                 // time of the first epoch
+  epochSeconds: number;          // 30
+  stages: SleepStage[];          // one per epoch, gaps are "noData"
+  minutes: StageMinutes;
+  signalQuality: number;         // 0..1, signal quality (not accuracy)
+  estimatorVersion: number;
+}
+
+interface SleepScore {
+  total: number;                 // 0-100, rounded
+  label: "Great" | "Good" | "Fair" | "Poor";   // 85+, 70-84, 50-69, under 50
+  estimated: true;               // always: stages are estimated, so the score is too
+  components: {
+    key: "duration" | "breathing" | "maskSeal" | "continuity" | "sleepStages";
+    label: string;               // "Hours used", "Breathing events", "Mask seal", "Unbroken sleep", "Sleep stages (estimated)"
+    points: number; maxPoints: number;
+    detail: string;              // one plain sentence, e.g. "6 h 58 m, close to the 7 h goal"
+  }[];
+}
+
+interface Tip {
+  id: string;                    // stable, e.g. "short-night", "mask-fit", "ahi-watch"
+  severity: "good" | "info" | "watch" | "talk";
+  title: string;                 // "Check your mask fit"
+  body: string;                  // 1-2 plain sentences; never suggests changing machine settings
+  learnSlug: string | null;      // glossary key for "Learn more"
+}
+```
+
+### Sleep score (computed in sleeplens-core, `score.rs`)
+
+Points (maximum 100):
+
+| Component | Max | Rule (piecewise linear between the points listed) |
+| --- | --- | --- |
+| Hours used | 30 | 0 h → 0, 4 h → 15, 7 h → 30, more than 7 h → 30 |
+| Breathing events (AHI) | 30 | AHI 0-1 → 30, 5 → 22, 15 → 8, 30+ → 0 |
+| Mask seal | 15 | large-leak share of the night 0 % → 15, 5 % → 10, 20 % → 0; then minus up to 5 as excess-leak p95 goes from 24 to 40 L/min |
+| Unbroken sleep | 10 | 10 minus 2 per interruption, plus minus up to 4 for estimated wake share above 10 % of mask-on time; min 0 |
+| Sleep stages (estimated) | 15 | 15 × min(1, (deep + REM) / mask-on sleep ÷ 0.35) |
+
+If a component's data is missing (no AHI, no stages), drop it and scale the
+others up to 100. Never score a night under 30 min of use (score `null`).
+
+### Tips (computed in sleeplens-core, `tips.rs`)
+
+Rules, phrased as general guides; never suggest changing pressure or other
+machine settings; "talk" tips say to contact the clinician.
+
+- Short night (under 4 h) → watch: keep the mask on all night; Auto ON helps.
+- Large leak over 5 % of the night, or excess-leak p95 over 24 L/min → watch: check mask fit and cushion wear.
+- AHI 5-15 → watch; AHI over 15, or the same on 3 of the last 7 nights → talk.
+- Central apnea index over 5, or more than half of events central with AHI over 5 → talk.
+- 3 or more interruptions → info: many mask-off breaks.
+- Period compliance under 70 % → watch; 90 % or more → good.
+- Period average score up 5+ vs previous → good; down 5+ → info.
+- Prescription changed during the night/period → info: compare before and after.
+- All good → good: one encouraging line.
+
+### Help terms
+
+The UI shows a small "?" button next to technical words that opens a short
+popover (2-3 sentences) with a "More in Learn" link. Keys: `ahi`,
+`obstructiveApnea`, `centralApnea`, `hypopnea`, `apneaIndex`, `excessLeak`,
+`largeLeak`, `pressureP90`, `pressure`, `ramp`, `comfort`, `validNight`,
+`compliance`, `sleepScore`, `sleepStages`, `deepSleep`, `remSleep`,
+`lightSleep`, `wake`, `interruptions`. Content lives in the UI (one glossary
+file shared by the popovers and the Learn screen).
+
+### Backend notes (v2)
+
+- `AppInfo.needsReread` counts nights without stages from the current
+  estimator version. Importing the same card re-reads those night files even
+  when their size and modification time have not changed.
+- The continuity wake penalty rises linearly from zero at 10% estimated wake
+  share to four points at 100%. The sleep-stage component uses light, deep,
+  and REM minutes as its sleep denominator, excluding wake.
+- Mask seal is omitted when large-leak minutes are missing, even if excess
+  leak p95 is available, because the large-leak share is unknown.
+- Score components keep their original `maxPoints` weights. Their `points`
+  values round to one decimal; `total` rescales the unrounded available
+  components to 100 and rounds to an integer.
+- A stage estimate with no estimated sleep receives zero stage points.
+- Repeated AHI counts the most recent seven distinct imported nights through
+  the selected date, including nights separated by calendar gaps.
+- An empty database with no explicit period end returns an import-first
+  error. An explicit end returns the requested dates, zero nights and null
+  averages, with one score-series entry for each day.

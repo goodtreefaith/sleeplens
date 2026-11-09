@@ -1,6 +1,9 @@
 use crate::types::*;
 use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
 use rusqlite::{params, Connection, OptionalExtension};
+use sleeplens_core::sleep_stages::{
+    SleepStage, SleepStageEstimate, StageMinutes, ESTIMATOR_VERSION,
+};
 use sleeplens_core::{Device, Night, NightListItem, Series, Settings};
 use std::{
     io::{Read, Write},
@@ -31,7 +34,7 @@ impl Store {
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .map_err(err)?;
-        if version > 1 {
+        if version > 2 {
             return Err("This database needs a newer version of SleepLens.".into());
         }
         if version == 0 {
@@ -50,10 +53,41 @@ impl Store {
               PRAGMA user_version=1;
               COMMIT;").map_err(err)?;
         }
-        Ok(Self {
+        let mut store = Self {
             path,
             conn: Some(conn),
-        })
+        };
+        if version < 2 {
+            store.migrate_v2()?;
+        }
+        Ok(store)
+    }
+    fn migrate_v2(&mut self) -> AppResult<()> {
+        self.db()?.execute_batch("BEGIN;
+            ALTER TABLE nights ADD COLUMN sleep_score REAL;
+            ALTER TABLE nights ADD COLUMN excess_leak_p95 REAL;
+            ALTER TABLE nights ADD COLUMN interruptions INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE nights ADD COLUMN prescription_changed INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE nights ADD COLUMN intranight_prescription_changed INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE nights ADD COLUMN estimator_version INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE nights ADD COLUMN score_json TEXT;
+            CREATE TABLE stages(date TEXT PRIMARY KEY REFERENCES nights(date) ON DELETE CASCADE, blob BLOB NOT NULL);").map_err(err)?;
+        let result = (|| -> AppResult<()> {
+            for item in self.list_nights(None, None)? {
+                let mut night = self.cached_night(&item.date)?;
+                night.list.interruptions = night.sessions.len().saturating_sub(1);
+                sleeplens_core::score::refresh_score(&mut night);
+                self.db()?.execute("UPDATE nights SET sleep_score=?2,interruptions=?3,score_json=?4,list_json=?5 WHERE date=?1", params![night.list.date,night.list.sleep_score,night.list.interruptions,night.score.as_ref().map(serde_json::to_string).transpose().map_err(err)?,serde_json::to_string(&night.list).map_err(err)?]).map_err(err)?;
+            }
+            self.db()?
+                .execute_batch("PRAGMA user_version=2; COMMIT;")
+                .map_err(err)
+        })();
+        if result.is_err() {
+            let _ = self.db()?.execute_batch("ROLLBACK;");
+        }
+        result?;
+        self.reconcile_settings()
     }
     fn db(&self) -> AppResult<&Connection> {
         self.conn
@@ -107,6 +141,7 @@ impl Store {
                 .transpose()
                 .map_err(err)?,
             night_count,
+            needs_reread: db.query_row("SELECT count(*) FROM nights n WHERE n.estimator_version < ?1 OR NOT EXISTS(SELECT 1 FROM stages s WHERE s.date=n.date)", [ESTIMATOR_VERSION], |r| r.get(0)).map_err(err)?,
             first_date,
             last_date,
             last_import_at,
@@ -126,7 +161,16 @@ impl Store {
             .collect()
     }
     pub fn night_detail(&self, date: &str) -> AppResult<Night> {
-        self.read_night(date, true)
+        let mut night = self.read_night(date, true)?;
+        let recent = self
+            .list_nights(None, Some(date))?
+            .iter()
+            .rev()
+            .take(7)
+            .map(|n| self.cached_night(&n.date))
+            .collect::<AppResult<Vec<_>>>()?;
+        night.tips = sleeplens_core::tips::night_tips(&night, &recent);
+        Ok(night)
     }
     pub fn cached_night(&self, date: &str) -> AppResult<Night> {
         self.read_night(date, false)
@@ -180,6 +224,30 @@ impl Store {
             sessions,
             events,
             series,
+            score: db
+                .query_row("SELECT score_json FROM nights WHERE date=?1", [date], |r| {
+                    r.get::<_, Option<String>>(0)
+                })
+                .map_err(err)?
+                .map(|j| serde_json::from_str(&j))
+                .transpose()
+                .map_err(err)?,
+            stages: db
+                .query_row("SELECT blob FROM stages WHERE date=?1", [date], |r| {
+                    r.get::<_, Vec<u8>>(0)
+                })
+                .optional()
+                .map_err(err)?
+                .map(|b| decode_stages(&b))
+                .transpose()?,
+            tips: Vec::new(),
+            intranight_prescription_changed: db
+                .query_row(
+                    "SELECT intranight_prescription_changed FROM nights WHERE date=?1",
+                    [date],
+                    |r| r.get(0),
+                )
+                .map_err(err)?,
         })
     }
     pub fn device_for_night(&self, date: &str) -> AppResult<Device> {
@@ -210,7 +278,7 @@ impl Store {
         size: u64,
         mtime: &str,
     ) -> AppResult<bool> {
-        self.db()?.query_row("SELECT EXISTS(SELECT 1 FROM file_index f JOIN nights n ON f.date=n.date WHERE f.path=?1 AND f.date=?2 AND f.device=?3 AND n.device=?3 AND f.size=?4 AND f.mtime=?5)", params![key,date,device,size,mtime], |r| r.get(0)).map_err(err)
+        self.db()?.query_row("SELECT EXISTS(SELECT 1 FROM file_index f JOIN nights n ON f.date=n.date WHERE f.path=?1 AND f.date=?2 AND f.device=?3 AND n.device=?3 AND f.size=?4 AND f.mtime=?5 AND n.estimator_version>=?6 AND EXISTS(SELECT 1 FROM stages s WHERE s.date=n.date))", params![key,date,device,size,mtime,ESTIMATOR_VERSION], |r| r.get(0)).map_err(err)
     }
     pub fn save_night(
         &mut self,
@@ -227,9 +295,9 @@ impl Store {
             .map_err(err)?;
         tx.execute("INSERT INTO devices(id,json) VALUES(?1,?2) ON CONFLICT(id) DO UPDATE SET json=excluded.json", params![device.0,serde_json::to_string(device.1).map_err(err)?]).map_err(err)?;
         let n = &night.list;
-        tx.execute("INSERT INTO nights VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)
-          ON CONFLICT(date) DO UPDATE SET device=excluded.device,start=excluded.start,end=excluded.end,usage_minutes=excluded.usage_minutes,usage_source=excluded.usage_source,ahi=excluded.ahi,pressure_mean=excluded.pressure_mean,pressure_p90=excluded.pressure_p90,pressure_source=excluded.pressure_source,excess_leak_median=excluded.excess_leak_median,large_leak_minutes=excluded.large_leak_minutes,event_counts=excluded.event_counts,settings_changed=excluded.settings_changed,summary=excluded.summary,settings=excluded.settings,list_json=excluded.list_json",
-          params![n.date,device.0,n.start,n.end,n.usage_minutes,serde_json::to_string(&n.usage_source).map_err(err)?,n.ahi,n.pressure_mean,n.pressure_p90,serde_json::to_string(&n.pressure_source).map_err(err)?,n.excess_leak_median,n.large_leak_minutes,serde_json::to_string(&n.event_counts).map_err(err)?,n.settings_changed,serde_json::to_string(&night.summary).map_err(err)?,night.settings.as_ref().map(serde_json::to_string).transpose().map_err(err)?,serde_json::to_string(n).map_err(err)?]).map_err(err)?;
+        tx.execute("INSERT INTO nights(date,device,start,end,usage_minutes,usage_source,ahi,pressure_mean,pressure_p90,pressure_source,excess_leak_median,large_leak_minutes,event_counts,settings_changed,summary,settings,list_json,sleep_score,excess_leak_p95,interruptions,prescription_changed,estimator_version,score_json,intranight_prescription_changed) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24)
+          ON CONFLICT(date) DO UPDATE SET device=excluded.device,start=excluded.start,end=excluded.end,usage_minutes=excluded.usage_minutes,usage_source=excluded.usage_source,ahi=excluded.ahi,pressure_mean=excluded.pressure_mean,pressure_p90=excluded.pressure_p90,pressure_source=excluded.pressure_source,excess_leak_median=excluded.excess_leak_median,large_leak_minutes=excluded.large_leak_minutes,event_counts=excluded.event_counts,settings_changed=excluded.settings_changed,summary=excluded.summary,settings=excluded.settings,list_json=excluded.list_json,sleep_score=excluded.sleep_score,excess_leak_p95=excluded.excess_leak_p95,interruptions=excluded.interruptions,prescription_changed=excluded.prescription_changed,estimator_version=excluded.estimator_version,score_json=excluded.score_json,intranight_prescription_changed=excluded.intranight_prescription_changed",
+          params![n.date,device.0,n.start,n.end,n.usage_minutes,serde_json::to_string(&n.usage_source).map_err(err)?,n.ahi,n.pressure_mean,n.pressure_p90,serde_json::to_string(&n.pressure_source).map_err(err)?,n.excess_leak_median,n.large_leak_minutes,serde_json::to_string(&n.event_counts).map_err(err)?,n.settings_changed,serde_json::to_string(&night.summary).map_err(err)?,night.settings.as_ref().map(serde_json::to_string).transpose().map_err(err)?,serde_json::to_string(n).map_err(err)?,n.sleep_score,n.excess_leak_p95,n.interruptions,n.prescription_changed,night.stages.as_ref().map_or(0, |s| s.estimator_version),night.score.as_ref().map(serde_json::to_string).transpose().map_err(err)?,night.intranight_prescription_changed]).map_err(err)?;
         for table in ["events", "sessions"] {
             tx.execute(&format!("DELETE FROM {table} WHERE date=?1"), [&n.date])
                 .map_err(err)?;
@@ -247,6 +315,12 @@ impl Store {
                 params![n.date, i, serde_json::to_string(session).map_err(err)?],
             )
             .map_err(err)?;
+        }
+        if let Some(stages) = &night.stages {
+            tx.execute("INSERT INTO stages VALUES(?1,?2) ON CONFLICT(date) DO UPDATE SET blob=excluded.blob", params![n.date,encode_stages(stages)?]).map_err(err)?;
+        } else {
+            tx.execute("DELETE FROM stages WHERE date=?1", [&n.date])
+                .map_err(err)?;
         }
         if let Some(blob) = compressed {
             tx.execute("INSERT INTO series VALUES(?1,?2) ON CONFLICT(date) DO UPDATE SET blob=excluded.blob", params![n.date,blob]).map_err(err)?;
@@ -348,20 +422,163 @@ impl Store {
             n.settings_changed = prev
                 .as_ref()
                 .is_some_and(|p| settings.as_ref().is_some_and(|s| p != s));
+            let intrinsic: bool = tx
+                .query_row(
+                    "SELECT intranight_prescription_changed FROM nights WHERE date=?1",
+                    [&n.date],
+                    |r| r.get(0),
+                )
+                .map_err(err)?;
+            n.prescription_changed = intrinsic
+                || prev.as_ref().is_some_and(|p| {
+                    settings.as_ref().is_some_and(|s| {
+                        p.mode != s.mode
+                            || p.start_pressure != s.start_pressure
+                            || p.min_pressure != s.min_pressure
+                            || p.max_pressure != s.max_pressure
+                            || p.fixed_pressure != s.fixed_pressure
+                    })
+                });
             if settings.is_some() {
                 prev = settings;
             }
             tx.execute(
-                "UPDATE nights SET settings_changed=?2,list_json=?3 WHERE date=?1",
+                "UPDATE nights SET settings_changed=?2,list_json=?3,prescription_changed=?4 WHERE date=?1",
                 params![
                     n.date,
                     n.settings_changed,
-                    serde_json::to_string(&n).map_err(err)?
+                    serde_json::to_string(&n).map_err(err)?, n.prescription_changed
                 ],
             )
             .map_err(err)?;
         }
         tx.commit().map_err(err)
+    }
+    pub fn period_summary(
+        &self,
+        period: &str,
+        end: Option<&str>,
+    ) -> AppResult<sleeplens_core::PeriodSummary> {
+        use sleeplens_core::{PeriodSummary, PreviousPeriod, ScorePoint, ScoredNight};
+        let days: usize = match period {
+            "week" => 7,
+            "month" => 30,
+            "6months" => 182,
+            "year" => 365,
+            _ => return Err("Choose week, month, 6months, or year.".into()),
+        };
+        let latest = self.app_info()?.last_date;
+        let end = end
+            .or(latest.as_deref())
+            .ok_or("Import nights before viewing a period summary.")?;
+        let to = validate_date(end)?;
+        let from = to
+            .checked_sub_signed(chrono::Duration::days(days as i64 - 1))
+            .ok_or("Date range is out of bounds.")?;
+        let previous_to = from.pred_opt().ok_or("Date range is out of bounds.")?;
+        let previous_from = from
+            .checked_sub_signed(chrono::Duration::days(days as i64))
+            .ok_or("Date range is out of bounds.")?;
+        if previous_from < chrono::NaiveDate::from_ymd_opt(1, 1, 1).expect("valid date") {
+            return Err("Date range is out of bounds.".into());
+        }
+        let from_text = from.format("%Y-%m-%d").to_string();
+        let to_text = to.format("%Y-%m-%d").to_string();
+        let items = self.list_nights(Some(&from_text), Some(&to_text))?;
+        let previous = self.list_nights(
+            Some(&previous_from.format("%Y-%m-%d").to_string()),
+            Some(&previous_to.format("%Y-%m-%d").to_string()),
+        )?;
+        let nights = items
+            .iter()
+            .map(|n| self.cached_night(&n.date))
+            .collect::<AppResult<Vec<_>>>()?;
+        let stage_minutes: Vec<_> = nights
+            .iter()
+            .filter_map(|n| n.stages.as_ref().map(|s| &s.minutes))
+            .collect();
+        let avg_stage_minutes = (!stage_minutes.is_empty()).then(|| {
+            let count = stage_minutes.len() as f32;
+            StageMinutes {
+                wake: stage_minutes.iter().map(|m| m.wake).sum::<f32>() / count,
+                light: stage_minutes.iter().map(|m| m.light).sum::<f32>() / count,
+                deep: stage_minutes.iter().map(|m| m.deep).sum::<f32>() / count,
+                rem: stage_minutes.iter().map(|m| m.rem).sum::<f32>() / count,
+            }
+        });
+        let valid_nights = items.iter().filter(|n| n.usage_minutes > 240.0).count();
+        let used = items.iter().filter(|n| n.usage_minutes > 0.0).count();
+        let mut scored: Vec<_> = items
+            .iter()
+            .filter_map(|n| n.sleep_score.map(|score| (score, n.date.clone())))
+            .collect();
+        scored.sort();
+        let scored_night = |value: &(u32, String)| ScoredNight {
+            date: value.1.clone(),
+            sleep_score: value.0,
+        };
+        let mut summary = PeriodSummary {
+            period: period.into(),
+            from: from_text,
+            to: to_text,
+            days_in_range: days,
+            nights: used,
+            valid_nights,
+            compliance_pct: valid_nights as f64 / days as f64 * 100.0,
+            avg_usage_minutes: average(
+                items
+                    .iter()
+                    .filter(|n| n.usage_minutes > 0.0)
+                    .map(|n| Some(n.usage_minutes)),
+            ),
+            avg_ahi: average(items.iter().map(|n| n.ahi)),
+            avg_sleep_score: average(items.iter().map(|n| n.sleep_score.map(f64::from))),
+            avg_excess_leak_p95: average(items.iter().map(|n| n.excess_leak_p95)),
+            avg_pressure_p90: average(items.iter().map(|n| n.pressure_p90)),
+            avg_stage_minutes,
+            previous: PreviousPeriod {
+                avg_usage_minutes: average(
+                    previous
+                        .iter()
+                        .filter(|n| n.usage_minutes > 0.0)
+                        .map(|n| Some(n.usage_minutes)),
+                ),
+                avg_ahi: average(previous.iter().map(|n| n.ahi)),
+                avg_sleep_score: average(previous.iter().map(|n| n.sleep_score.map(f64::from))),
+                compliance_pct: (!previous.is_empty()).then(|| {
+                    previous.iter().filter(|n| n.usage_minutes > 240.0).count() as f64 / days as f64
+                        * 100.0
+                }),
+            },
+            best_night: scored.last().map(scored_night),
+            worst_night: scored.first().map(scored_night),
+            score_series: (0..days)
+                .map(|offset| {
+                    let date = (from + chrono::Duration::days(offset as i64))
+                        .format("%Y-%m-%d")
+                        .to_string();
+                    let night = items.iter().find(|n| n.date == date);
+                    ScorePoint {
+                        date,
+                        sleep_score: night.and_then(|n| n.sleep_score),
+                        usage_minutes: night.map_or(0.0, |n| n.usage_minutes),
+                    }
+                })
+                .collect(),
+            tips: Vec::new(),
+        };
+        // Earlier imported nights provide recurrence context only. Period metrics above
+        // and tip emission dates remain restricted to the selected range.
+        let mut tip_nights = self
+            .list_nights(None, Some(&previous_to.format("%Y-%m-%d").to_string()))?
+            .iter()
+            .rev()
+            .take(6)
+            .map(|n| self.cached_night(&n.date))
+            .collect::<AppResult<Vec<_>>>()?;
+        tip_nights.extend(nights);
+        summary.tips = sleeplens_core::tips::period_tips(&summary, &tip_nights);
+        Ok(summary)
     }
     pub fn trends(&self, from: Option<&str>, to: Option<&str>) -> AppResult<Trends> {
         let items = self.list_nights(from, to)?;
@@ -402,6 +619,8 @@ impl Store {
             avg_ahi: average(items.iter().map(|n| n.ahi)),
             avg_pressure_p90: average(items.iter().map(|n| n.pressure_p90)),
             avg_excess_leak: average(items.iter().map(|n| n.excess_leak_median)),
+            avg_sleep_score: average(items.iter().map(|n| n.sleep_score.map(f64::from))),
+            avg_excess_leak_p95: average(items.iter().map(|n| n.excess_leak_p95)),
             points: items
                 .into_iter()
                 .map(|n| TrendPoint {
@@ -411,6 +630,9 @@ impl Store {
                     pressure_p90: n.pressure_p90,
                     excess_leak_median: n.excess_leak_median,
                     settings_changed: n.settings_changed,
+                    sleep_score: n.sleep_score,
+                    excess_leak_p95: n.excess_leak_p95,
+                    prescription_changed: n.prescription_changed,
                 })
                 .collect(),
         })
@@ -421,6 +643,9 @@ fn average(values: impl Iterator<Item = Option<f64>>) -> Option<f64> {
     (!values.is_empty()).then(|| values.iter().sum::<f64>() / values.len() as f64)
 }
 fn validate_date(date: &str) -> AppResult<chrono::NaiveDate> {
+    if date.len() != 10 || date.starts_with("0000") {
+        return Err("Use a date in YYYY-MM-DD format.".into());
+    }
     let parsed = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
         .map_err(|_| "Use a date in YYYY-MM-DD format.".to_string())?;
     if parsed.format("%Y-%m-%d").to_string() != date {
@@ -503,4 +728,117 @@ fn decode_series(blob: &[u8]) -> AppResult<Series> {
         flow_amplitude: channel()?,
         snore: channel()?,
     })
+}
+
+// Header stores the estimate metadata; the remaining bytes are exactly one per epoch.
+fn encode_stages(stages: &SleepStageEstimate) -> AppResult<Vec<u8>> {
+    let mut metadata = stages.clone();
+    metadata.stages.clear();
+    let header = serde_json::to_vec(&metadata).map_err(err)?;
+    let mut blob = Vec::with_capacity(9 + header.len() + stages.stages.len());
+    blob.push(1);
+    blob.extend_from_slice(&(header.len() as u32).to_le_bytes());
+    blob.extend_from_slice(&(stages.stages.len() as u32).to_le_bytes());
+    blob.extend_from_slice(&header);
+    blob.extend(stages.stages.iter().map(|stage| match stage {
+        SleepStage::Wake => 0,
+        SleepStage::Light => 1,
+        SleepStage::Deep => 2,
+        SleepStage::Rem => 3,
+        SleepStage::NoData => 4,
+    }));
+    Ok(blob)
+}
+fn decode_stages(blob: &[u8]) -> AppResult<SleepStageEstimate> {
+    if blob.len() < 9 || blob[0] != 1 {
+        return Err("Unsupported stored stages version.".into());
+    }
+    let length = u32::from_le_bytes(blob[1..5].try_into().map_err(err)?) as usize;
+    let count = u32::from_le_bytes(blob[5..9].try_into().map_err(err)?) as usize;
+    let header_end = 9usize
+        .checked_add(length)
+        .filter(|end| *end <= blob.len())
+        .ok_or("Invalid stored stages header.")?;
+    if blob.len() - header_end != count {
+        return Err("Invalid stored stages length.".into());
+    }
+    let mut estimate: SleepStageEstimate =
+        serde_json::from_slice(&blob[9..header_end]).map_err(err)?;
+    estimate.stages = blob[header_end..]
+        .iter()
+        .map(|stage| match stage {
+            0 => Ok(SleepStage::Wake),
+            1 => Ok(SleepStage::Light),
+            2 => Ok(SleepStage::Deep),
+            3 => Ok(SleepStage::Rem),
+            4 => Ok(SleepStage::NoData),
+            _ => Err("Invalid stored stage.".into()),
+        })
+        .collect::<AppResult<_>>()?;
+    Ok(estimate)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn stage_blob_preserves_metadata_and_encodes_one_byte_per_epoch() {
+        let estimate = SleepStageEstimate {
+            start: "2026-11-01T22:00:00".into(),
+            epoch_seconds: 30,
+            stages: vec![
+                SleepStage::Wake,
+                SleepStage::Light,
+                SleepStage::Deep,
+                SleepStage::Rem,
+                SleepStage::NoData,
+            ],
+            minutes: StageMinutes {
+                wake: 0.5,
+                light: 0.5,
+                deep: 0.5,
+                rem: 0.5,
+            },
+            signal_quality: 0.8,
+            estimator_version: ESTIMATOR_VERSION,
+        };
+        let blob = encode_stages(&estimate).unwrap();
+        let metadata_len = u32::from_le_bytes(blob[1..5].try_into().unwrap()) as usize;
+        assert_eq!(blob.len(), 9 + metadata_len + estimate.stages.len());
+        assert_eq!(&blob[9 + metadata_len..], &[0, 1, 2, 3, 4]);
+        assert_eq!(decode_stages(&blob).unwrap(), estimate);
+    }
+    #[test]
+    fn stage_blob_rejects_truncation_and_unknown_codes() {
+        assert!(decode_stages(&[]).is_err());
+        assert!(decode_stages(&[1, 255, 255, 255, 255]).is_err());
+        let estimate = SleepStageEstimate {
+            start: "2026-11-01T22:00:00".into(),
+            epoch_seconds: 30,
+            stages: vec![SleepStage::Light],
+            minutes: StageMinutes::default(),
+            signal_quality: 0.0,
+            estimator_version: ESTIMATOR_VERSION,
+        };
+        let mut blob = encode_stages(&estimate).unwrap();
+        assert!(decode_stages(&blob[..blob.len() - 1]).is_err());
+        let mut extra = blob.clone();
+        extra.push(0);
+        assert!(decode_stages(&extra).is_err());
+        *blob.last_mut().unwrap() = 255;
+        assert!(decode_stages(&blob).is_err());
+    }
+    #[test]
+    fn period_summary_rejects_invalid_inputs_and_date_underflow() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("test.sqlite")).unwrap();
+        assert!(store.period_summary("week", None).is_err());
+        assert!(store.period_summary("daily", Some("2026-11-01")).is_err());
+        assert!(store.period_summary("week", Some("2026-02-30")).is_err());
+        assert!(store.period_summary("year", Some("0001-01-01")).is_err());
+        let summary = store.period_summary("week", Some("2026-11-01")).unwrap();
+        assert_eq!(summary.score_series.len(), 7);
+        assert_eq!(summary.avg_usage_minutes, None);
+        assert_eq!(summary.previous.compliance_pct, None);
+    }
 }

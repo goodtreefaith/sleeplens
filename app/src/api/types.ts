@@ -5,6 +5,7 @@ export type PressureUnit = "hPa" | "cmH2O" | "unknown";
 
 export interface AppInfo {
   version: string;
+  needsReread: number;
   dataDir: string;
   dbSizeBytes: number;
   device: Device | null;
@@ -73,6 +74,9 @@ export interface NightListItem {
   pressureP90: number | null;
   pressureSource: Source;
   excessLeakMedian: number | null;
+  excessLeakP95: number | null;
+  sleepScore: number | null;
+  interruptions: number;
   largeLeakMinutes: number | null;
   eventCounts: EventCounts;
   settingsChanged: boolean;
@@ -104,6 +108,9 @@ export interface Session {
 }
 
 export interface NightDetail extends NightListItem {
+  score: SleepScore | null;
+  stages: SleepStageEstimate | null;
+  tips: Tip[];
   sessions: Session[];
   summary: NightSummary;
   settings: Settings | null;
@@ -156,6 +163,9 @@ export interface SettingsChange {
 }
 
 export interface TrendPoint {
+  sleepScore: number | null;
+  excessLeakP95: number | null;
+  prescriptionChanged: boolean;
   date: string;
   usageMinutes: number;
   ahi: number | null;
@@ -175,6 +185,8 @@ export interface Trends {
   avgAhi: number | null;
   avgPressureP90: number | null;
   avgExcessLeak: number | null;
+  avgSleepScore: number | null;
+  avgExcessLeakP95: number | null;
   points: TrendPoint[];
 }
 
@@ -200,6 +212,7 @@ export interface SleepLensApi {
   listNights(range?: DateRange): Promise<NightListItem[]>;
   nightDetail(date: string): Promise<NightDetail>;
   trends(range?: DateRange): Promise<Trends>;
+  periodSummary(period: Period, end?: string): Promise<PeriodSummary>;
   settingsHistory(): Promise<SettingsChange[]>;
   deleteAllData(): Promise<null>;
   loadSampleData(): Promise<ImportStarted>;
@@ -215,4 +228,56 @@ export interface SleepLensApi {
    * Returns null when the platform cannot supply paths (the UI then uses HTML drag events).
    */
   onDragDrop(handler: (e: DragDropEvent) => void): Promise<Unlisten | null>;
+}
+
+export type Period = "week" | "month" | "6months" | "year";
+export type SleepStage = "wake" | "light" | "deep" | "rem" | "noData";
+export interface StageMinutes { wake: number; light: number; deep: number; rem: number }
+export interface SleepStageEstimate {
+  start: string;
+  epochSeconds: number;
+  stages: SleepStage[];
+  minutes: StageMinutes;
+  signalQuality: number;
+  estimatorVersion: number;
+}
+export interface SleepScore {
+  total: number;
+  label: "Great" | "Good" | "Fair" | "Poor";
+  estimated: true;
+  components: {
+    key: "duration" | "breathing" | "maskSeal" | "continuity" | "sleepStages";
+    label: string;
+    points: number;
+    maxPoints: number;
+    detail: string;
+  }[];
+}
+export interface Tip {
+  id: string;
+  severity: "good" | "info" | "watch" | "talk";
+  title: string;
+  body: string;
+  learnSlug: string | null;
+}
+export interface PeriodSummary {
+  period: Period;
+  from: string; to: string; daysInRange: number;
+  nights: number; validNights: number; compliancePct: number;
+  avgUsageMinutes: number | null;
+  avgAhi: number | null;
+  avgSleepScore: number | null;
+  avgExcessLeakP95: number | null;
+  avgPressureP90: number | null;
+  avgStageMinutes: StageMinutes | null;
+  previous: {
+    avgUsageMinutes: number | null;
+    avgAhi: number | null;
+    avgSleepScore: number | null;
+    compliancePct: number | null;
+  };
+  bestNight: { date: string; sleepScore: number } | null;
+  worstNight: { date: string; sleepScore: number } | null;
+  scoreSeries: { date: string; sleepScore: number | null; usageMinutes: number }[];
+  tips: Tip[];
 }

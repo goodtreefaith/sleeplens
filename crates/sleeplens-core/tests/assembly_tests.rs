@@ -257,3 +257,62 @@ fn short_serial_is_fully_masked() {
         "•••"
     );
 }
+
+#[test]
+fn stages_follow_record_timestamps_and_leak_p95_uses_nearest_rank() {
+    let import = assemble_card(&memory_card()).unwrap();
+    for night in &import.nights {
+        let stages = night.stages.as_ref().unwrap();
+        let series = night.series.as_ref().unwrap();
+        assert_eq!(stages.start, series.series_start);
+        assert_eq!(stages.stages.len(), series.pressure.len().div_ceil(30));
+        let mut leak: Vec<_> = series.excess_leak.iter().flatten().copied().collect();
+        leak.sort_by(f32::total_cmp);
+        let expected = leak[((leak.len() as f64 * 0.95).ceil() as usize) - 1];
+        assert!((night.list.excess_leak_p95.unwrap() - expected as f64).abs() < 1e-5);
+        assert_eq!(
+            night.list.interruptions,
+            night.sessions.len().saturating_sub(1)
+        );
+        assert_eq!(
+            night.list.sleep_score,
+            night.score.as_ref().map(|s| s.total)
+        );
+        assert!(!night.tips.is_empty());
+    }
+    let third = &import.nights[2];
+    assert!(third.stages.as_ref().unwrap().stages[11..69]
+        .iter()
+        .all(|s| *s == sleeplens_core::SleepStage::NoData));
+}
+
+#[test]
+fn only_mode_and_pressure_changes_are_prescription_changes() {
+    let import = assemble_card(&memory_card()).unwrap();
+    let settings = import.nights[0].settings.as_ref().unwrap();
+    let mut changed = settings.clone();
+    changed.humidifier_level = changed.humidifier_level.wrapping_add(1);
+    changed.ramp_minutes = changed.ramp_minutes.wrapping_add(1);
+    changed.comfort_level = changed.comfort_level.wrapping_add(1);
+    assert!(!sleeplens_core::prescription_differs(settings, &changed));
+    changed.min_pressure += 1.;
+    assert!(sleeplens_core::prescription_differs(settings, &changed));
+    let mut bkp = sleeplens_core::bkp::parse_bkp(&memory_card().0["TEST0000.bkp"]);
+    let mut before = bkp.settings[0].clone();
+    before.time = make_local_time(2030, 1, 15, 19, 0, 0);
+    let mut during = before.clone();
+    during.time = make_local_time(2030, 1, 15, 22, 0, 0);
+    during.min_pressure += 1.;
+    bkp.settings = vec![before, during];
+    let start = make_local_time(2030, 1, 15, 21, 0, 0).unwrap().epoch_sec;
+    assert!(sleeplens_core::prescription_changed_within(
+        &bkp,
+        Some(start),
+        Some(start + 7200)
+    ));
+    assert!(!sleeplens_core::prescription_changed_within(
+        &bkp,
+        Some(start),
+        Some(start + 60)
+    ));
+}

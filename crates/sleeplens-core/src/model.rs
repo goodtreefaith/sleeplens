@@ -115,6 +115,14 @@ pub struct NightListItem {
     pub large_leak_minutes: Option<f64>,
     pub event_counts: EventCounts,
     pub settings_changed: bool,
+    #[serde(default)]
+    pub excess_leak_p95: Option<f64>,
+    #[serde(default)]
+    pub sleep_score: Option<u32>,
+    #[serde(default)]
+    pub interruptions: usize,
+    #[serde(default)]
+    pub prescription_changed: bool,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -126,5 +134,83 @@ pub struct Night {
     pub settings: Option<Settings>,
     pub events: Vec<TherapyEvent>,
     pub series: Option<Series>,
+    #[serde(default)]
+    pub score: Option<SleepScore>,
+    #[serde(default)]
+    pub stages: Option<crate::sleep_stages::SleepStageEstimate>,
+    #[serde(default)]
+    pub tips: Vec<Tip>,
+    #[serde(default, skip_serializing)]
+    pub intranight_prescription_changed: bool,
 }
 pub type NightDetail = Night;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SleepScore {
+    pub total: u32,
+    pub label: String,
+    pub estimated: bool,
+    pub components: Vec<ScoreComponent>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScoreComponent {
+    pub key: String,
+    pub label: String,
+    pub points: f64,
+    pub max_points: f64,
+    pub detail: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Tip {
+    pub id: String,
+    pub severity: String,
+    pub title: String,
+    pub body: String,
+    pub learn_slug: Option<String>,
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviousPeriod {
+    pub avg_usage_minutes: Option<f64>,
+    pub avg_ahi: Option<f64>,
+    pub avg_sleep_score: Option<f64>,
+    pub compliance_pct: Option<f64>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScoredNight {
+    pub date: String,
+    pub sleep_score: u32,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScorePoint {
+    pub date: String,
+    pub sleep_score: Option<u32>,
+    pub usage_minutes: f64,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PeriodSummary {
+    pub period: String,
+    pub from: String,
+    pub to: String,
+    pub days_in_range: usize,
+    pub nights: usize,
+    pub valid_nights: usize,
+    pub compliance_pct: f64,
+    pub avg_usage_minutes: Option<f64>,
+    pub avg_ahi: Option<f64>,
+    pub avg_sleep_score: Option<f64>,
+    pub avg_excess_leak_p95: Option<f64>,
+    pub avg_pressure_p90: Option<f64>,
+    pub avg_stage_minutes: Option<crate::sleep_stages::StageMinutes>,
+    pub previous: PreviousPeriod,
+    pub best_night: Option<ScoredNight>,
+    pub worst_night: Option<ScoredNight>,
+    pub score_series: Vec<ScorePoint>,
+    pub tips: Vec<Tip>,
+}

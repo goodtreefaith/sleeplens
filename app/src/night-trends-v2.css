@@ -1,0 +1,21 @@
+.event-help-row{display:flex;align-items:center;gap:2px;min-width:0}
+.evcounts .event-help-row>button{flex:1;min-width:0}
+.event-help-row>.help-tip{flex:none}
+.chart-marker-tooltip{font-size:12px;line-height:1.4;color:var(--ink);background:var(--surface-2);padding:6px 9px;border:1px solid var(--line);border-radius:6px;margin:4px 0}
+.chart-guide-label{font-size:12px;line-height:1.4;color:var(--muted);margin:4px 0 0;min-height:18px}
+.prescription-marker{cursor:help;outline:none}
+.prescription-marker:focus .mk{stroke:var(--ink);stroke-width:2}
+.trends-v2 .multiples{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+.trends-v2 .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+.trends-v2 .kpi .status{white-space:nowrap;font-size:12px;padding:4px 7px;flex-shrink:0}
+.trends-v2 .trend-figs{grid-template-columns:minmax(0,1fr) 280px}
+.balanced-months.heat-months{display:grid;justify-content:space-between;gap:20px 24px}
+.month-body{display:flex;gap:4px;align-items:flex-start}
+.month-body .heat-wd{flex:none}
+.stage-help-legend{margin:6px 0 14px;flex-wrap:wrap}
+.prescription-legend{font-size:13px;margin:0}
+.prescription-legend>span{font-size:20px;margin-right:6px}
+@media(max-width:1100px){.trends-v2 .trend-figs{grid-template-columns:minmax(0,1fr) 240px}.trends-v2 .trend-figs .card{padding:16px}.trends-v2 .kpi .status{font-size:11px;gap:3px;padding:4px 5px}.trends-v2 .kpi .status svg{width:14px;height:14px}}
+.evcounts .event-help-row .help-wrap{flex:none}
+.evcounts .event-help-row .help-tip{display:inline-grid;place-items:center;grid-template-columns:none;width:20px;height:20px;min-height:20px;padding:0;border:1px solid var(--line-strong);border-radius:50%;font-size:12px;text-align:center}
+.chart-marker-tooltip{position:absolute;top:0;left:24px;right:8px;z-index:5;margin:0;pointer-events:none;box-shadow:0 3px 12px #0002}

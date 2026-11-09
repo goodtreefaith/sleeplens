@@ -5,6 +5,9 @@ import type { Go } from "../App";
 import { NightCharts, type Zoom } from "../charts/NightCharts";
 import { DateStepper } from "../components/DateStepper";
 import { EVENT_STYLE, Icon, type MarkerKind, Swatch } from "../components/Icon";
+import { HelpTip } from "../components/HelpTip";
+import { ScoreBadge } from "../components/SleepQuality";
+import "../night-trends-v2.css";
 import { SourceTag } from "../components/Status";
 import { useData, errorText } from "../lib/data";
 import { wallSeconds } from "../lib/dates";
@@ -26,7 +29,7 @@ export function NightScreen({ date, go, theme }: { date?: string; go: Go; theme:
     setDetail(null); setErr(null); setZoom(null); setSel(null);
     api.nightDetail(d).then((x) => alive && setDetail(x)).catch((e) => alive && setErr(errorText(e)));
     return () => { alive = false; };
-  }, [d, has]);
+  }, [d, has, info?.lastImportAt]);
 
   if (!d) return null;
   const unit = detail?.settings?.pressureUnit ?? info?.device?.pressureUnit ?? "unknown";
@@ -37,6 +40,7 @@ export function NightScreen({ date, go, theme }: { date?: string; go: Go; theme:
       <div className="screen-h">
         <h1 id="h-night" className="sr">Night detail</h1>
         <DateStepper nights={nights} date={d} onDate={(nd) => go({ screen: "night", date: nd })} />
+        {detail ? <ScoreBadge score={detail.score} go={go} /> : null}
       </div>
       {!has ? (
         <div className="card placeholder"><Icon name="moon" /><h2>No therapy recorded on {longDate(d)}</h2><p>Pick another night with the arrows above.</p></div>
@@ -70,16 +74,19 @@ export function NightScreen({ date, go, theme }: { date?: string; go: Go; theme:
               <div className="card-h"><h2 id="h-sum">Machine summary</h2></div>
               <dl className="kv">
                 <dt>Hours used</dt><dd>{hm(detail.usageMinutes)}</dd>
-                <dt>Events per hour</dt><dd>{detail.ahi == null ? <span className="na">not recorded</span> : r1(detail.ahi)}</dd>
-                <dt>Apnea index</dt><dd>{r1(detail.summary.ai)}</dd>
-                <dt>Obstructive index</dt><dd>{r1(detail.summary.oai)}</dd>
-                <dt>Central index</dt><dd>{r1(detail.summary.cai)}</dd>
-                <dt>Hypopnea index</dt><dd>{r1(detail.summary.hi)}</dd>
+                <dt>Interruptions <HelpTip term="interruptions" /></dt><dd>{detail.interruptions}</dd>
+                <dt>Extra leak, 95th percentile <HelpTip term="excessLeak" /></dt><dd>{r1(detail.excessLeakP95)} L/min</dd>
+                <dt>Large leak <HelpTip term="largeLeak" /></dt><dd>{r1(detail.largeLeakMinutes)} min</dd>
+                <dt>Events per hour <HelpTip term="ahi" /></dt><dd>{detail.ahi == null ? <span className="na">not recorded</span> : r1(detail.ahi)}</dd>
+                <dt>Apnea index <HelpTip term="apneaIndex" /></dt><dd>{r1(detail.summary.ai)}</dd>
+                <dt>Obstructive index <HelpTip term="obstructiveApnea" /></dt><dd>{r1(detail.summary.oai)}</dd>
+                <dt>Central index <HelpTip term="centralApnea" /></dt><dd>{r1(detail.summary.cai)}</dd>
+                <dt>Hypopnea index <HelpTip term="hypopnea" /></dt><dd>{r1(detail.summary.hi)}</dd>
                 <dt>Snore index</dt><dd>{r1(detail.summary.sni)}</dd>
-                <dt>Start pressure</dt><dd>{detail.summary.startPressure == null ? "–" : `${r1(detail.summary.startPressure)} ${u}`}</dd>
-                <dt>Highest pressure</dt><dd>{detail.summary.maxPressure == null ? "–" : `${r1(detail.summary.maxPressure)} ${u}`}</dd>
-                <dt>Average pressure</dt><dd>{r1(detail.pressureMean)} {u}</dd>
-                <dt>High pressure (90%)</dt><dd>{r1(detail.pressureP90)} {u}</dd>
+                <dt>Start pressure <HelpTip term="pressure" /></dt><dd>{detail.summary.startPressure == null ? "–" : `${r1(detail.summary.startPressure)} ${u}`}</dd>
+                <dt>Highest pressure <HelpTip term="pressure" /></dt><dd>{detail.summary.maxPressure == null ? "–" : `${r1(detail.summary.maxPressure)} ${u}`}</dd>
+                <dt>Average pressure <HelpTip term="pressure" /></dt><dd>{r1(detail.pressureMean)} {u}</dd>
+                <dt>High pressure (90%) <HelpTip term="pressureP90" /></dt><dd>{r1(detail.pressureP90)} {u}</dd>
               </dl>
               {detail.pressureSource === "computed" ? <p style={{ marginTop: 12 }}><SourceTag computed /> <span className="quiet">Pressure values</span></p> : null}
             </section>
@@ -88,11 +95,11 @@ export function NightScreen({ date, go, theme }: { date?: string; go: Go; theme:
                 <div className="card-h"><h2 id="h-set">Settings this night</h2>{detail.settingsChanged ? <span className="status watch"><Icon name="sliders" />Changed</span> : null}</div>
                 <dl className="kv">
                   <dt>Mode</dt><dd>{detail.settings.modeLabel}</dd>
-                  <dt>Pressure range</dt><dd>{detail.settings.minPressure}–{detail.settings.maxPressure} {u}</dd>
-                  <dt>Start pressure</dt><dd>{detail.settings.startPressure} {u}</dd>
-                  <dt>Ramp</dt><dd>{detail.settings.rampMinutes ? `${detail.settings.rampMinutes} min` : "Off"}</dd>
+                  <dt>Pressure range <HelpTip term="pressure" /></dt><dd>{detail.settings.minPressure}–{detail.settings.maxPressure} {u}</dd>
+                  <dt>Start pressure <HelpTip term="pressure" /></dt><dd>{detail.settings.startPressure} {u}</dd>
+                  <dt>Ramp <HelpTip term="ramp" /></dt><dd>{detail.settings.rampMinutes ? `${detail.settings.rampMinutes} min` : "Off"}</dd>
                   <dt>Humidifier</dt><dd>Level {detail.settings.humidifierLevel}</dd>
-                  <dt>Comfort</dt><dd>Level {detail.settings.comfortLevel}</dd>
+                  <dt>Comfort <HelpTip term="comfort" /></dt><dd>Level {detail.settings.comfortLevel}</dd>
                 </dl>
               </section>
             ) : null}
@@ -149,7 +156,7 @@ function EventList({ detail, sel, onPick }: { detail: NightDetail; sel: number |
       <div className="card-h"><h2 id="h-ev">Events</h2><p>{notRecorded ? "Breathing events not recorded by the machine" : plural(list.length, "event")}</p></div>
       {counts.length ? (
         <div className="legend" style={{ marginBottom: 10 }}>
-          {counts.map(({ k, n }) => <span key={k} title={DEFINITION[k]}><Swatch kind={k} />{EVENT_STYLE[k].short} {n}</span>)}
+          {counts.map(({ k, n }) => <span key={k} title={DEFINITION[k]}><Swatch kind={k} />{EVENT_STYLE[k].short} {n} <HelpTip term={k} /></span>)}
         </div>
       ) : null}
       {list.length ? (
@@ -159,11 +166,11 @@ function EventList({ detail, sel, onPick }: { detail: NightDetail; sel: number |
               {list.map(({ e, i }) => {
                 const k = e.kind as MarkerKind;
                 return (
-                  <button key={i} type="button" role="listitem" aria-pressed={sel === i} title={DEFINITION[k]} onClick={() => onPick(i, e)}>
+                  <div key={i} className="event-help-row" role="listitem"><button type="button" aria-pressed={sel === i} title={DEFINITION[k]} onClick={() => onPick(i, e)}>
                     <Swatch kind={k} />
                     <span className="ev-name">{SHORT_LABEL[k]} · {e.value} {k === "largeLeak" ? "min" : "s"}</span>
                     <span className="t">{clock(e.time)}</span>
-                  </button>
+                  </button><HelpTip term={k} /></div>
                 );
               })}
             </div>

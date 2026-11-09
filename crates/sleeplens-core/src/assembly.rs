@@ -108,6 +108,7 @@ pub fn stream_card_with_backup(
         months: detection.months.clone(),
     };
     let mut previous_settings: Option<Settings> = None;
+    let mut recent_nights = Vec::new();
     for file in &detection.nights {
         let bytes = source.read(&file.path)?;
         let header = parse_dat_header(&bytes);
@@ -165,6 +166,18 @@ pub fn stream_card_with_backup(
                 })
                 .map(Settings::from)
         });
+        let intranight_prescription_changed = bkp.is_some_and(|b| {
+            prescription_changed_within(
+                b,
+                sum.start.as_ref().map(|s| s.epoch_sec),
+                sum.end.as_ref().map(|s| s.epoch_sec),
+            )
+        });
+        let prescription_changed = previous_settings
+            .as_ref()
+            .zip(settings.as_ref())
+            .is_some_and(|(old, new)| prescription_differs(old, new))
+            || intranight_prescription_changed;
         let changed = previous_settings
             .as_ref()
             .is_some_and(|old| settings.as_ref().is_some_and(|new| old != new));
@@ -182,6 +195,7 @@ pub fn stream_card_with_backup(
                 "night timestamp span exceeds 48 hours",
             ));
         }
+        let mut flow = Vec::new();
         let series = sum
             .start
             .as_ref()
@@ -196,13 +210,17 @@ pub fn stream_card_with_backup(
                     flow_amplitude: vec![None; length],
                     snore: vec![None; length],
                 };
-                for record in iterate_dat_records(&bytes, false).filter(|r| r.valid) {
+                flow.resize(length * 50, f32::NAN);
+                for record in iterate_dat_records(&bytes, true).filter(|r| r.valid) {
                     let Some(time) = record.time else { continue };
                     let Ok(index) = usize::try_from(time.epoch_sec - start.epoch_sec) else {
                         continue;
                     };
                     if index >= length {
                         continue;
+                    }
+                    if let Some(waveforms) = record.waveforms {
+                        flow[index * 50..(index + 1) * 50].copy_from_slice(&waveforms.patient_flow);
                     }
                     series.pressure[index] = Some(record.set_pressure as f32);
                     series.excess_leak[index] = Some(record.excess_leak as f32);
@@ -217,7 +235,35 @@ pub fn stream_card_with_backup(
         } else {
             Source::Computed
         };
-        let night = Night {
+        let stages = series.as_ref().map(|s| {
+            let excess_leak: Vec<_> = s
+                .excess_leak
+                .iter()
+                .map(|v| v.unwrap_or(f32::NAN))
+                .collect();
+            let start = sum.start.as_ref().expect("series has start").epoch_sec;
+            let event_offsets: Vec<_> = events
+                .iter()
+                .filter(|e| {
+                    matches!(
+                        e.kind.as_str(),
+                        "obstructiveApnea" | "centralApnea" | "hypopnea"
+                    )
+                })
+                .filter_map(|e| {
+                    chrono::NaiveDateTime::parse_from_str(&e.time, "%Y-%m-%dT%H:%M:%S").ok()
+                })
+                .filter_map(|t| u32::try_from(t.and_utc().timestamp() - start).ok())
+                .collect();
+            crate::sleep_stages::estimate_sleep_stages(&crate::sleep_stages::SleepStageInput {
+                start: &s.series_start,
+                flow: &flow,
+                hz: 50,
+                excess_leak: &excess_leak,
+                event_offsets: &event_offsets,
+            })
+        });
+        let mut night = Night {
             list: NightListItem {
                 date,
                 start: sum.start.as_ref().map(|t| t.iso.clone()),
@@ -236,6 +282,10 @@ pub fn stream_card_with_backup(
                 large_leak_minutes: machine.map(|s| s.large_leak_minutes),
                 event_counts: counts,
                 settings_changed: changed,
+                prescription_changed,
+                excess_leak_p95: (sum.record_seconds > 0).then_some(sum.excess_leak.p95),
+                sleep_score: None,
+                interruptions: sum.sessions.len().saturating_sub(1),
             },
             sessions: sum
                 .sessions
@@ -260,7 +310,28 @@ pub fn stream_card_with_backup(
             settings,
             events,
             series,
+            stages,
+            score: None,
+            tips: Vec::new(),
+            intranight_prescription_changed,
         };
+        crate::score::refresh_score(&mut night);
+        night.tips = crate::tips::night_tips(&night, &recent_nights);
+        recent_nights.push(Night {
+            list: night.list.clone(),
+            sessions: Vec::new(),
+            summary: night.summary.clone(),
+            settings: None,
+            events: Vec::new(),
+            series: None,
+            score: None,
+            stages: None,
+            tips: Vec::new(),
+            intranight_prescription_changed: night.intranight_prescription_changed,
+        });
+        if recent_nights.len() > 7 {
+            recent_nights.remove(0);
+        }
         visit(night);
         metadata.night_count += 1;
     }
@@ -318,6 +389,15 @@ pub fn refresh_backup_fields(night: &mut Night, bkp: &crate::bkp::BkpParseResult
         }
     }
 
+    let epoch = |value: &Option<String>| {
+        value
+            .as_ref()
+            .and_then(|v| chrono::NaiveDateTime::parse_from_str(v, "%Y-%m-%dT%H:%M:%S").ok())
+            .map(|v| v.and_utc().timestamp())
+    };
+    night.intranight_prescription_changed =
+        prescription_changed_within(bkp, epoch(&night.list.start), epoch(&night.list.end));
+    night.list.prescription_changed |= night.intranight_prescription_changed;
     night.events = events;
     night.list.event_counts = counts;
     if let Some(s) = machine {
@@ -340,5 +420,37 @@ pub fn refresh_backup_fields(night: &mut Night, bkp: &crate::bkp::BkpParseResult
             })
             .unwrap_or_default();
     }
+    crate::score::refresh_score(night);
+    night.tips = crate::tips::night_tips(night, &[]);
     true
+}
+
+/// Prescription markers exclude comfort, humidity, ramp and convenience settings.
+pub fn prescription_differs(old: &Settings, new: &Settings) -> bool {
+    old.mode != new.mode
+        || old.start_pressure != new.start_pressure
+        || old.min_pressure != new.min_pressure
+        || old.max_pressure != new.max_pressure
+        || old.fixed_pressure != new.fixed_pressure
+}
+
+/// Detect logged prescription changes during mask use, independently of the header snapshot.
+pub fn prescription_changed_within(
+    bkp: &crate::bkp::BkpParseResult,
+    start: Option<i64>,
+    end: Option<i64>,
+) -> bool {
+    let Some((start, end)) = start.zip(end) else {
+        return false;
+    };
+    let mut entries: Vec<_> = bkp
+        .settings
+        .iter()
+        .filter(|s| s.time.as_ref().is_some_and(|t| t.epoch_sec <= end))
+        .collect();
+    entries.sort_by_key(|s| s.time.as_ref().map(|t| t.epoch_sec));
+    entries.windows(2).any(|pair| {
+        pair[1].time.as_ref().is_some_and(|t| t.epoch_sec >= start)
+            && prescription_differs(&Settings::from(pair[0]), &Settings::from(pair[1]))
+    })
 }

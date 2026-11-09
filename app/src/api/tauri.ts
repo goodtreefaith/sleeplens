@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
   AppInfo, CardCandidate, DateRange, DragDropEvent, ImportProgress, ImportResult, ImportStarted,
-  NightDetail, NightListItem, SettingsChange, SleepLensApi, Trends, Unlisten
+  PeriodSummary, NightDetail, NightListItem, SettingsChange, SleepLensApi, Trends, Unlisten
 } from "./types";
 
 /** Drops undefined keys so optional args arrive as missing (Option::None) on the Rust side. */
@@ -23,6 +23,7 @@ export function createTauriApi(): SleepLensApi {
     listNights: (range) => invoke<NightListItem[]>("list_nights", rangeArgs(range)),
     nightDetail: (date) => invoke<NightDetail>("night_detail", { date }),
     trends: (range) => invoke<Trends>("trends", rangeArgs(range)),
+    periodSummary: (period, end) => invoke<PeriodSummary>("period_summary", { period, ...(end ? { end } : {}) }),
     settingsHistory: () => invoke<SettingsChange[]>("settings_history"),
     deleteAllData: () => invoke<null>("delete_all_data", { confirm: true }),
     loadSampleData: () => invoke<ImportStarted>("load_sample_data"),
