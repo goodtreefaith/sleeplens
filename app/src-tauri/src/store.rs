@@ -34,7 +34,7 @@ impl Store {
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .map_err(err)?;
-        if version > 2 {
+        if version > 3 {
             return Err("This database needs a newer version of SleepLens.".into());
         }
         if version == 0 {
@@ -60,7 +60,40 @@ impl Store {
         if version < 2 {
             store.migrate_v2()?;
         }
+        if version < 3 {
+            store.migrate_v3_scores()?;
+        }
         Ok(store)
+    }
+    fn migrate_v3_scores(&mut self) -> AppResult<()> {
+        // Formula changes use the imported fields and stored estimates. They do
+        // not invalidate stages or require the original card or waveform series.
+        self.db()?.execute_batch("BEGIN;").map_err(err)?;
+        let result =
+            (|| -> AppResult<()> {
+                for item in self.list_nights(None, None)? {
+                    let mut night = self.cached_night(&item.date)?;
+                    sleeplens_core::score::refresh_score(&mut night);
+                    let score_json = night
+                        .score
+                        .as_ref()
+                        .map(serde_json::to_string)
+                        .transpose()
+                        .map_err(err)?;
+                    let list_json = serde_json::to_string(&night.list).map_err(err)?;
+                    self.db()?.execute(
+                    "UPDATE nights SET sleep_score=?2,score_json=?3,list_json=?4 WHERE date=?1",
+                    params![night.list.date, night.list.sleep_score, score_json, list_json],
+                ).map_err(err)?;
+                }
+                self.db()?
+                    .execute_batch("PRAGMA user_version=3; COMMIT;")
+                    .map_err(err)
+            })();
+        if result.is_err() {
+            let _ = self.db()?.execute_batch("ROLLBACK;");
+        }
+        result
     }
     fn migrate_v2(&mut self) -> AppResult<()> {
         self.db()?.execute_batch("BEGIN;
@@ -467,16 +500,26 @@ impl Store {
             "year" => 365,
             _ => return Err("Choose week, month, 6months, or year.".into()),
         };
-        let latest = self.app_info()?.last_date;
+        let info = self.app_info()?;
         let end = end
-            .or(latest.as_deref())
+            .or(info.last_date.as_deref())
             .ok_or("Import nights before viewing a period summary.")?;
         let to = validate_date(end)?;
-        let from = to
+        let requested_from = to
             .checked_sub_signed(chrono::Duration::days(days as i64 - 1))
             .ok_or("Date range is out of bounds.")?;
-        let previous_to = from.pred_opt().ok_or("Date range is out of bounds.")?;
-        let previous_from = from
+        let first = info.first_date.as_deref().map(validate_date).transpose()?;
+        // An explicit end before the first import remains an empty historical
+        // range rather than producing an inverted date range.
+        let from = first
+            .filter(|first| *first <= to)
+            .map_or(requested_from, |first| requested_from.max(first));
+        let clamped_to_first_night = from != requested_from;
+        let days_in_range = (to - from).num_days() as usize + 1;
+        let previous_to = requested_from
+            .pred_opt()
+            .ok_or("Date range is out of bounds.")?;
+        let previous_from = requested_from
             .checked_sub_signed(chrono::Duration::days(days as i64))
             .ok_or("Date range is out of bounds.")?;
         if previous_from < chrono::NaiveDate::from_ymd_opt(1, 1, 1).expect("valid date") {
@@ -485,10 +528,14 @@ impl Store {
         let from_text = from.format("%Y-%m-%d").to_string();
         let to_text = to.format("%Y-%m-%d").to_string();
         let items = self.list_nights(Some(&from_text), Some(&to_text))?;
-        let previous = self.list_nights(
-            Some(&previous_from.format("%Y-%m-%d").to_string()),
-            Some(&previous_to.format("%Y-%m-%d").to_string()),
-        )?;
+        let previous = if first.is_some_and(|first| previous_from < first) {
+            Vec::new()
+        } else {
+            self.list_nights(
+                Some(&previous_from.format("%Y-%m-%d").to_string()),
+                Some(&previous_to.format("%Y-%m-%d").to_string()),
+            )?
+        };
         let nights = items
             .iter()
             .map(|n| self.cached_night(&n.date))
@@ -521,10 +568,12 @@ impl Store {
             period: period.into(),
             from: from_text,
             to: to_text,
-            days_in_range: days,
+            days_in_range,
+            clamped_to_first_night,
+            headline: String::new(),
             nights: used,
             valid_nights,
-            compliance_pct: valid_nights as f64 / days as f64 * 100.0,
+            compliance_pct: valid_nights as f64 / days_in_range as f64 * 100.0,
             avg_usage_minutes: average(
                 items
                     .iter()
@@ -552,7 +601,7 @@ impl Store {
             },
             best_night: scored.last().map(scored_night),
             worst_night: scored.first().map(scored_night),
-            score_series: (0..days)
+            score_series: (0..days_in_range)
                 .map(|offset| {
                     let date = (from + chrono::Duration::days(offset as i64))
                         .format("%Y-%m-%d")
@@ -567,6 +616,7 @@ impl Store {
                 .collect(),
             tips: Vec::new(),
         };
+        summary.headline = period_headline(&summary, &items);
         // Earlier imported nights provide recurrence context only. Period metrics above
         // and tip emission dates remain restricted to the selected range.
         let mut tip_nights = self
@@ -638,6 +688,51 @@ impl Store {
         })
     }
 }
+fn period_headline(summary: &sleeplens_core::PeriodSummary, items: &[NightListItem]) -> String {
+    let breathing = match summary.avg_ahi {
+        Some(ahi) if ahi < 5.0 => "average breathing events were below 5 per hour",
+        Some(ahi) if ahi <= 15.0 => "average breathing events were between 5 and 15 per hour",
+        Some(_) => "average breathing events were above 15 per hour",
+        None => "breathing events were not recorded",
+    };
+    let seal_nights = items
+        .iter()
+        .filter(|night| {
+            night.excess_leak_p95.is_some_and(|leak| leak > 24.0)
+                || night.large_leak_minutes.is_some_and(|leak| {
+                    night.usage_minutes > 0.0 && leak / night.usage_minutes > 0.05
+                })
+        })
+        .count();
+    let seal = if seal_nights > 0 {
+        format!(
+            "mask leaks were higher on {seal_nights} {}",
+            if seal_nights == 1 { "night" } else { "nights" }
+        )
+    } else if items
+        .iter()
+        .any(|night| night.excess_leak_p95.is_some() || night.large_leak_minutes.is_some())
+    {
+        "recorded mask leaks stayed low".into()
+    } else {
+        "mask seal was not recorded".into()
+    };
+    let harder = items
+        .iter()
+        .filter(|night| night.sleep_score.is_some_and(|score| score < 70))
+        .count();
+    format!(
+        "You used it on {} of {} nights, {breathing}, {seal}, and {harder} {} harder.",
+        summary.nights,
+        summary.days_in_range,
+        if harder == 1 {
+            "night was"
+        } else {
+            "nights were"
+        }
+    )
+}
+
 fn average(values: impl Iterator<Item = Option<f64>>) -> Option<f64> {
     let values: Vec<_> = values.flatten().collect();
     (!values.is_empty()).then(|| values.iter().sum::<f64>() / values.len() as f64)

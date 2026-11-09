@@ -304,3 +304,34 @@ file shared by the popovers and the Learn screen).
 - An empty database with no explicit period end returns an import-first
   error. An explicit end returns the requested dates, zero nights and null
   averages, with one score-series entry for each day.
+
+## Version 2.1 changes (2026-11-09, after real-card check, design review and QA)
+
+These replace the matching v2 rules.
+
+- **Periods start at the first imported night.** `period_summary` clamps
+  `from` to the first night on record (days before it are not "missed"),
+  `daysInRange` and compliance use the clamped range, and a new field
+  `clampedToFirstNight: boolean` says so. The previous-period comparison is
+  null when the previous period would start before the first night.
+- **`PeriodSummary.headline: string`**: one plain sentence summarising the
+  period, e.g. "A steady month: you used it on 27 of 30 nights, breathing
+  events stayed in the normal range, and two nights were harder."
+- **`Tip.evidence: string | null`** (one plain line, e.g. "AHI above 5 on 2
+  nights") and **`Tip.evidenceDates: string[]`** (nights the evidence refers
+  to, max 5, newest first). Period tips must explain themselves this way; a
+  period "watch" tip for breathing events only fires when at least 3 nights in
+  the period had AHI over 5 (or the period average is over 5).
+- **Sleep score points (replaces the v2 table)** — spreads good and great
+  nights apart and gives the estimated stages less weight:
+
+  | Component | Max | Rule (piecewise linear) |
+  | --- | --- | --- |
+  | Hours used | 30 | 0 h → 0, 4 h → 12, 6 h → 22, 7 h → 27, 8 h or more → 30 |
+  | Breathing events (AHI) | 30 | 0 → 30, 1 → 28, 2 → 26, 5 → 20, 15 → 8, 30+ → 0 |
+  | Mask seal | 15 | large-leak share 0 % → 15, 5 % → 10, 20 % → 0; minus up to 5 as excess-leak p95 goes from 20 to 36 L/min |
+  | Unbroken sleep | 15 | 15 minus 3 per interruption, minus up to 6 as estimated wake share goes from 5 % to 20 % of mask-on time; min 0 |
+  | Sleep stages (estimated) | 10 | 5 × min(1, deep share ÷ 0.15) + 5 × min(1, REM share ÷ 0.20) |
+
+  Missing components are still dropped and the rest rescaled; labels stay
+  (85+ Great, 70-84 Good, 50-69 Fair, under 50 Poor).

@@ -141,6 +141,24 @@ struct Series { hz: f32, unit: &'static str, data: Vec<f32> }  // pressure, flow
 | Centred dashed drop zone, icon, one primary button, accepted types listed | Fireflies, Asana, Vapi | First screen |
 | File list with per-item status ("Scanning…", "Match found") | Revolut Business | Card reading progress per month folder |
 
+#### Score, sleep stages and period views (Mobbin, pulled 2026-11-09)
+
+The sleep score, estimated stages and Week/Month/6 months/Year views follow
+these references. Check new UI against them, not against general taste.
+
+| Pattern | Reference | We take |
+| --- | --- | --- |
+| Score ring split into coloured segments, one per component; big status word beside it; component rows "Duration 40/50" with a one-line reason, inside the same card | [Apple Health Sleep Score](https://mobbin.com/screens/8a81ce54-1ba8-4f72-b939-962e73e72e00), [summary](https://mobbin.com/screens/7aecb44c-8dfc-46e9-883e-86eb5301ea19) | Score card = segmented ring + "Great" + component rows visible (not hidden) |
+| Big number + status word ("73 GOOD"), then a "Contributors" list: each row a bar + value or word ("Optimal", "Fair") + chevron to detail | [Oura sleep](https://mobbin.com/screens/ded88fa6-85b6-460f-89b9-9eb71fcd2ef9), [contributors](https://mobbin.com/screens/655447d8-888f-447a-8566-9a294f382f98) | Each score component shows a status word, not only points |
+| Score ring + rows with a 3-step mini meter (Poor / Sufficient / Optimal) and a legend | [WHOOP sleep performance](https://mobbin.com/screens/7734a2ec-4e6f-4923-9d3c-a3d9d84dd619) | 3-step meters on component rows |
+| Stepped hypnogram: stages on rows (Awake top, then REM, Light, Deep), blocks joined by vertical connector lines, start/end times under it, legend below | [Oura stages](https://mobbin.com/screens/b7ae7e96-85bc-440b-8f7f-e7450f7523fd), [Eight Sleep](https://mobbin.com/screens/1950371b-dbdc-4144-a424-049b44c06602), [Ultrahuman](https://mobbin.com/screens/aa610b78-5ec6-44fb-9b10-0b98c59f7adb), [Bevel](https://mobbin.com/screens/c4c2dd72-1d95-431b-898f-ad415b4f5c39) | Hypnogram style for Overview and the Night lane |
+| Stage summary list: stage name, horizontal bar, % and duration, with a shaded "typical range" on each bar | [The Outsiders](https://mobbin.com/screens/88396821-5f55-46d9-8c1e-fc4bc91be47b), [Bevel tiles](https://mobbin.com/screens/c4c2dd72-1d95-431b-898f-ad415b4f5c39) | Stage minutes as bars with typical-range bands |
+| Sleep cycles count under the hypnogram | [Ultrahuman](https://mobbin.com/screens/aa610b78-5ec6-44fb-9b10-0b98c59f7adb) | "About N sleep cycles (estimated)" |
+| D / W / M / Y segmented control, "This week" title with prev/next, big average score + one-sentence interpretation, chart with dotted Poor/Fair/Good/Excellent guide lines | [Google Health (Fitbit)](https://mobbin.com/screens/271b5a7b-fd66-43d3-acc0-6bd63c812f96), [Oura week](https://mobbin.com/screens/b6a702b9-cf15-4ff0-bae5-e68ceaabfa29), [Garmin](https://mobbin.com/screens/690bc0dd-48c5-4d95-8337-ca094006ca55) | Period view header, headline sentence, score chart with guide lines |
+| One bar per night with the value above it; stacked deep + REM "restorative sleep" bars | [WHOOP period](https://mobbin.com/screens/85171de8-b0a9-4930-8ac0-8964d7af355c) | Week/Month score and stage charts as bars |
+| Best and worst session side by side, "compared with" previous period | [Pillow](https://mobbin.com/screens/cd955e86-9e0e-4860-b6bd-5eed6cf39652) | Best/lowest night pair and period comparison |
+| (i) on each card opening a short explanation; an "About" section | [Apple Health about](https://mobbin.com/screens/38b2d05a-63fc-4983-b179-e8ec1eec2890), [WHOOP](https://mobbin.com/screens/595aadc4-d5f7-4a4e-84a0-0c56fca951e1) | Help popovers on technical words; "About the score" text |
+
 ### Screens
 
 1. **Import** (first launch)

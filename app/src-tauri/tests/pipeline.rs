@@ -278,6 +278,13 @@ fn fixture_v2_stages_tips_and_calendar_period() {
         assert!(!night.tips.is_empty());
         assert!(night.tips.len() <= 4);
         assert!(night.tips.iter().any(|tip| tip.id == "short-night"));
+        for tip in &night.tips {
+            assert!(tip.evidence.as_ref().is_some_and(|e| !e.is_empty()));
+            assert_eq!(
+                tip.evidence_dates.as_slice(),
+                std::slice::from_ref(&item.date)
+            );
+        }
         println!(
             "{} score {:?}, tips {:?}",
             item.date,
@@ -292,13 +299,15 @@ fn fixture_v2_stages_tips_and_calendar_period() {
         .stages
         .contains(&sleeplens_core::SleepStage::NoData));
     let summary = s.period_summary("week", None).unwrap();
-    assert_eq!(summary.from, "2030-01-11");
+    assert_eq!(summary.from, "2030-01-15");
+    assert!(summary.clamped_to_first_night);
+    assert!(summary.headline.contains("3 of 3 nights"));
     assert_eq!(summary.to, "2030-01-17");
-    assert_eq!(summary.days_in_range, 7);
+    assert_eq!(summary.days_in_range, 3);
     assert_eq!(summary.nights, 3);
     assert_eq!(summary.valid_nights, 0);
     assert_eq!(summary.compliance_pct, 0.0);
-    assert_eq!(summary.score_series.len(), 7);
+    assert_eq!(summary.score_series.len(), 3);
     assert_eq!(
         summary
             .score_series
@@ -315,12 +324,25 @@ fn fixture_v2_stages_tips_and_calendar_period() {
     assert!(summary.avg_stage_minutes.is_some());
     assert!(!summary.tips.is_empty());
     assert!(summary.tips.len() <= 5);
+    for tip in &summary.tips {
+        assert!(tip.evidence.as_ref().is_some_and(|e| !e.is_empty()));
+        assert!(tip.evidence_dates.len() <= 5);
+        assert!(tip
+            .evidence_dates
+            .windows(2)
+            .all(|dates| dates[0] > dates[1]));
+    }
+    let wire = serde_json::to_value(&summary).unwrap();
+    assert_eq!(wire["clampedToFirstNight"], true);
+    assert!(wire["headline"].as_str().is_some_and(|s| !s.is_empty()));
+    assert!(wire["tips"][0].get("evidenceDates").is_some());
     assert!(s.period_summary("invalid", None).is_err());
     assert!(s.period_summary("week", Some("bad")).is_err());
-    for (period, days) in [("month", 30), ("6months", 182), ("year", 365)] {
+    for period in ["month", "6months", "year"] {
         let period = s.period_summary(period, Some("2030-01-17")).unwrap();
-        assert_eq!(period.days_in_range, days);
-        assert_eq!(period.score_series.len(), days);
+        assert_eq!(period.days_in_range, 3);
+        assert_eq!(period.score_series.len(), 3);
+        assert!(period.clamped_to_first_night);
     }
 }
 
@@ -400,7 +422,7 @@ fn v1_database_migrates_without_losing_nights() {
     assert_eq!(
         conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .unwrap(),
-        2
+        3
     );
 }
 
@@ -513,4 +535,180 @@ fn period_tips_use_previous_nights_for_repeated_ahi_context() {
     let summary = s.period_summary("week", Some("2030-01-07")).unwrap();
     assert_eq!(summary.nights, 1);
     assert!(summary.tips.iter().any(|tip| tip.id == "ahi-talk"));
+}
+
+#[test]
+fn period_clamping_uses_imported_days_and_hides_partial_previous_period() {
+    let temp = TempDir::new().unwrap();
+    let store = db(&temp);
+    run(&store, &fixture(), "first");
+    let mut s = store.lock().unwrap();
+    let device = s.device_for_night("2030-01-15").unwrap();
+    let mut night = s.night_detail("2030-01-15").unwrap();
+    night.list.usage_minutes = 480.0;
+    sleeplens_core::score::refresh_score(&mut night);
+    s.save_night(&night, ("test-device", &device), None)
+        .unwrap();
+    let clamped = s.period_summary("week", Some("2030-01-17")).unwrap();
+    assert_eq!(clamped.valid_nights, 1);
+    assert!((clamped.compliance_pct - 100.0 / 3.0).abs() < 1e-10);
+    assert_eq!(clamped.score_series.first().unwrap().date, "2030-01-15");
+    assert_eq!(clamped.score_series.last().unwrap().date, "2030-01-17");
+    assert!(clamped.headline.contains("breathing events"));
+    assert!(clamped.headline.contains("mask leaks"));
+    assert!(clamped.headline.contains("harder"));
+    let partial_previous = s.period_summary("week", Some("2030-01-25")).unwrap();
+    assert!(!partial_previous.clamped_to_first_night);
+    assert_eq!(partial_previous.days_in_range, 7);
+    assert!(partial_previous.previous.avg_usage_minutes.is_none());
+    assert!(partial_previous.previous.avg_ahi.is_none());
+    assert!(partial_previous.previous.avg_sleep_score.is_none());
+    assert!(partial_previous.previous.compliance_pct.is_none());
+    let complete_previous = s.period_summary("week", Some("2030-01-28")).unwrap();
+    assert_eq!(
+        complete_previous.previous.avg_usage_minutes,
+        Some(
+            s.list_nights(None, None)
+                .unwrap()
+                .iter()
+                .map(|n| n.usage_minutes)
+                .sum::<f64>()
+                / 3.0
+        )
+    );
+}
+
+#[test]
+fn old_scores_recompute_on_open_without_rereading_card_or_stages() {
+    let temp = TempDir::new().unwrap();
+    let store = db(&temp);
+    run(&store, &fixture(), "first");
+    let mut s = store.lock().unwrap();
+    let mut night = s.night_detail("2030-01-15").unwrap();
+    let device = s.device_for_night(&night.list.date).unwrap();
+    night.list.usage_minutes = 480.0;
+    night.list.ahi = Some(1.0);
+    night.list.large_leak_minutes = Some(0.0);
+    night.list.excess_leak_p95 = Some(0.0);
+    sleeplens_core::score::refresh_score(&mut night);
+    let expected_score = night.score.clone().unwrap();
+    let expected_stages = night.stages.clone();
+    let conn = rusqlite::Connection::open(temp.path().join("sleeplens.db")).unwrap();
+    let device_id: String = conn
+        .query_row(
+            "SELECT device FROM nights WHERE date='2030-01-15'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    drop(conn);
+    s.save_night(&night, (&device_id, &device), None).unwrap();
+    let expected_needs_reread = s.app_info().unwrap().needs_reread;
+    drop(s);
+    drop(store);
+    let path = temp.path().join("sleeplens.db");
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    let index_before: Vec<(String, String, String, i64, String)> = conn
+        .prepare("SELECT path,date,device,size,mtime FROM file_index ORDER BY path")
+        .unwrap()
+        .query_map([], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let estimator_before: u32 = conn
+        .query_row(
+            "SELECT estimator_version FROM nights WHERE date='2030-01-15'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let stages_before: Vec<u8> = conn
+        .query_row("SELECT blob FROM stages WHERE date='2030-01-15'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    let series_before: Vec<u8> = conn
+        .query_row("SELECT blob FROM series WHERE date='2030-01-15'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    night.list.sleep_score = Some(1);
+    let mut old_score = expected_score.clone();
+    old_score.total = 1;
+    conn.execute(
+        "UPDATE nights SET sleep_score=1,score_json=?1,list_json=?2 WHERE date='2030-01-15'",
+        rusqlite::params![
+            serde_json::to_string(&old_score).unwrap(),
+            serde_json::to_string(&night.list).unwrap()
+        ],
+    )
+    .unwrap();
+    // A deliberately invalid stored waveform proves the formula migration does
+    // not load or re-estimate stages from high-resolution signals.
+    conn.execute("UPDATE series SET blob=x'00' WHERE date='2030-01-15'", [])
+        .unwrap();
+    conn.pragma_update(None, "user_version", 2).unwrap();
+    drop(conn);
+    let reopened = Store::open(&path).unwrap();
+    let refreshed = reopened.cached_night("2030-01-15").unwrap();
+    assert_eq!(
+        serde_json::to_value(&refreshed.score).unwrap(),
+        serde_json::to_value(&expected_score).unwrap()
+    );
+    assert_eq!(refreshed.list.sleep_score, Some(expected_score.total));
+    assert_eq!(refreshed.stages, expected_stages);
+    assert_eq!(
+        reopened.app_info().unwrap().needs_reread,
+        expected_needs_reread
+    );
+    assert_eq!(
+        reopened.list_nights(None, None).unwrap()[0].sleep_score,
+        Some(expected_score.total)
+    );
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    let stages_after: Vec<u8> = conn
+        .query_row("SELECT blob FROM stages WHERE date='2030-01-15'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(stages_after, stages_before);
+    let index_after: Vec<(String, String, String, i64, String)> = conn
+        .prepare("SELECT path,date,device,size,mtime FROM file_index ORDER BY path")
+        .unwrap()
+        .query_map([], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(index_after, index_before);
+    assert_eq!(
+        conn.query_row(
+            "SELECT estimator_version FROM nights WHERE date='2030-01-15'",
+            [],
+            |r| r.get::<_, u32>(0)
+        )
+        .unwrap(),
+        estimator_before
+    );
+    assert_eq!(
+        Store::open(&path)
+            .unwrap()
+            .cached_night("2030-01-15")
+            .unwrap()
+            .list
+            .sleep_score,
+        Some(expected_score.total)
+    );
+    conn.execute(
+        "UPDATE series SET blob=?1 WHERE date='2030-01-15'",
+        [series_before],
+    )
+    .unwrap();
+    drop(conn);
+    let repeat = run(&Arc::new(Mutex::new(reopened)), &fixture(), "unchanged");
+    assert_eq!(repeat.nights_skipped, 3);
+    assert_eq!(repeat.nights_updated, 0);
 }

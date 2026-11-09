@@ -57,7 +57,7 @@ fn period_summary(
     state: State<'_, AppState>,
     period: String,
     end: Option<String>,
-) -> AppResult<sleeplens_core::PeriodSummary> {
+) -> AppResult<PeriodSummary> {
     lock_store(&state.store)?.period_summary(&period, end.as_deref())
 }
 #[tauri::command]

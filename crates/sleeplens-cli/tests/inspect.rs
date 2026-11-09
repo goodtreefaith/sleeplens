@@ -20,7 +20,7 @@ fn inspect(args: &[&str]) -> String {
 }
 
 #[test]
-fn fixture_json_keeps_legacy_fields_and_adds_v2_details() {
+fn fixture_json_keeps_legacy_fields_and_adds_v2_1_details() {
     let output: Value = serde_json::from_str(&inspect(&["--json"])).unwrap();
     let nights = output["nights"].as_array().unwrap();
     assert_eq!(nights.len(), 3);
@@ -34,7 +34,21 @@ fn fixture_json_keeps_legacy_fields_and_adds_v2_details() {
         assert!(night["interruptions"].is_number());
         assert_eq!(night["stages"]["epochSeconds"], 30);
         assert!(!night["stages"]["stages"].as_array().unwrap().is_empty());
-        assert!(!night["tips"].as_array().unwrap().is_empty());
+        let tips = night["tips"].as_array().unwrap();
+        assert!(!tips.is_empty());
+        for tip in tips {
+            assert!(!tip["evidence"].as_str().unwrap().trim().is_empty());
+            let dates = tip["evidenceDates"].as_array().unwrap();
+            assert!(!dates.is_empty());
+            assert!(dates.len() <= 5);
+            assert!(dates
+                .windows(2)
+                .all(|pair| pair[0].as_str().unwrap() > pair[1].as_str().unwrap()));
+            assert!(dates
+                .iter()
+                .any(|date| date.as_str().unwrap().replace('-', "")
+                    == night["date"].as_str().unwrap()));
+        }
     }
 }
 

@@ -170,6 +170,10 @@ pub struct Tip {
     pub title: String,
     pub body: String,
     pub learn_slug: Option<String>,
+    #[serde(default)]
+    pub evidence: Option<String>,
+    #[serde(default)]
+    pub evidence_dates: Vec<String>,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -199,6 +203,10 @@ pub struct PeriodSummary {
     pub from: String,
     pub to: String,
     pub days_in_range: usize,
+    #[serde(default)]
+    pub clamped_to_first_night: bool,
+    #[serde(default)]
+    pub headline: String,
     pub nights: usize,
     pub valid_nights: usize,
     pub compliance_pct: f64,

@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use sleeplens_core::{Device, Settings};
 
+// Command responses share the core contract, including v2.1 period and tip fields.
+pub use sleeplens_core::PeriodSummary;
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInfo {

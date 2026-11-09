@@ -84,8 +84,15 @@ fn upgrade_real_database_then_reread() {
     report(&store.lock().unwrap(), "after migration");
 
     let t = Instant::now();
-    store.lock().unwrap().begin_import("reread").unwrap();
-    let mut result = new_result("reread");
+    let id = format!(
+        "reread-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    store.lock().unwrap().begin_import(&id).unwrap();
+    let mut result = new_result(&id);
     import_prepared(
         &store,
         prepare_card(&PathBuf::from(card)).unwrap(),
