@@ -9,7 +9,7 @@ export const SYNTH_SERIAL = 'TEST0000';
 export interface SynthEvent {
   /** Record index the event is stamped at (the END of the event). */
   at: number;
-  kind: 'apnea1' | 'apnea2' | 'hypopnea';
+  kind: 'obstructiveApnea' | 'centralApnea' | 'hypopnea';
   /** Seconds of reduced flow before the stamp. */
   duration: number;
 }
@@ -31,6 +31,12 @@ export interface SynthNight {
   level: number;
   /** A mid-night pause: records from `pauseAt` on are stamped `pauseSeconds` later. */
   pause?: { at: number; seconds: number };
+  /** Snore index x10 for the B5 summary (0x56). */
+  snoreIndexX10: number;
+  /** Seconds from `at` with leak flow (slots 270-319) at 95 L/min, above the 90 L/min large-leak line. */
+  largeLeak?: { at: number; seconds: number };
+  /** Extra bkp-only entries: [recordIndex, code, value] (E4-E7 and similar). */
+  extraEvents: Array<[number, number, number]>;
 }
 
 export const SYNTH_NIGHTS: SynthNight[] = [
@@ -41,13 +47,21 @@ export const SYNTH_NIGHTS: SynthNight[] = [
     leakBase: 20,
     leakMod: 10,
     events: [
-      { at: 130, kind: 'apnea1', duration: 15 },
-      { at: 250, kind: 'apnea2', duration: 12 },
+      { at: 130, kind: 'obstructiveApnea', duration: 15 },
+      { at: 250, kind: 'centralApnea', duration: 12 },
       { at: 420, kind: 'hypopnea', duration: 20 },
     ],
     sessionNumber: 1,
     skipAt: 341,
     level: 2,
+    snoreIndexX10: 12,
+    largeLeak: { at: 450, seconds: 90 }, // 1.5 large-leak minutes
+    extraEvents: [
+      [140, 0xe4, 3], // snore level
+      [150, 0xe7, 5], // snore count
+      [380, 0xe6, 2], // flow limitation
+      [540, 0xe5, 1], // large leak, stamped at the end of the window
+    ],
   },
   {
     start: { y: 2030, mo: 1, d: 16, h: 23, mi: 5, s: 0 },
@@ -56,12 +70,14 @@ export const SYNTH_NIGHTS: SynthNight[] = [
     leakBase: 30,
     leakMod: 12,
     events: [
-      { at: 200, kind: 'apnea1', duration: 14 },
+      { at: 200, kind: 'obstructiveApnea', duration: 14 },
       { at: 500, kind: 'hypopnea', duration: 18 },
     ],
     sessionNumber: 2,
     skipAt: Number.MAX_SAFE_INTEGER, // no drift skip on this night
     level: 14,
+    snoreIndexX10: 0,
+    extraEvents: [[600, 0xe6, 1]],
   },
   {
     // Starts at second 8 so the first bkp entry of the night disguises itself as a u16 year (2078).
@@ -71,15 +87,17 @@ export const SYNTH_NIGHTS: SynthNight[] = [
     leakBase: 25,
     leakMod: 8,
     events: [
-      { at: 100, kind: 'apnea1', duration: 14 },
-      { at: 250, kind: 'apnea2', duration: 12 },
-      { at: 400, kind: 'apnea2', duration: 12 },
+      { at: 100, kind: 'obstructiveApnea', duration: 14 },
+      { at: 250, kind: 'centralApnea', duration: 12 },
+      { at: 400, kind: 'centralApnea', duration: 12 },
       { at: 500, kind: 'hypopnea', duration: 16 },
     ],
     sessionNumber: 3,
     skipAt: 100,
     level: 9,
     pause: { at: 300, seconds: 1800 }, // 30 minute pause
+    snoreIndexX10: 35,
+    extraEvents: [[450, 0xe4, 2]],
   },
 ];
 
@@ -163,15 +181,21 @@ function settingsBlock(st: Stamp): Uint8Array {
   const dv = new DataView(b.buffer);
   b[0] = 0xc5;
   b[1] = 0xc5;
-  b[2] = 0x01;
-  dv.setUint16(3, 0x32, true); // 5.0 min
-  dv.setUint16(5, 0x3c, true);
-  dv.setUint16(7, 0x32, true);
-  dv.setUint16(9, 0x50, true); // 8.0 max
+  b[2] = 0x01; // mode: Auto CPAP
+  dv.setUint16(3, 50, true); // 5.0 start pressure
+  dv.setUint16(5, 60, true); // 6.0 fixed (CPAP-mode) pressure
+  dv.setUint16(7, 45, true); // 4.5 minimum pressure (differs from start so the mapping is tested)
+  dv.setUint16(9, 80, true); // 8.0 maximum pressure
+  b[0x14] = 3; // comfort (AS-Elex) time
+  b[0x15] = 0x22; // comfort level = low nibble (2)
+  b[0x16] = 1; // leak alert on
+  b[0x17] = 4; // humidifier level
+  b[0x18] = 15; // ramp minutes
+  b[0x19] = 1; // auto on
+  b[0x1a] = 0; // auto off disabled
+  b[0x1d] = 0; // pressure unit (raw)
   b[0x20] = 0x01;
   putStamp(dv, 0x21, st);
-  b[0x17] = 4; // humidifier level (Confirmed offset)
-  b[0x18] = 15; // ramp minutes (Guess), kept raw
   b[0x2e] = 3; // constant 3 on real cards; NOT the humidifier level
   b[0x7f] = 0x88;
   return b;
@@ -182,8 +206,12 @@ function buildDat(n: SynthNight, seed: number): Uint8Array {
   const dv = new DataView(out.buffer);
   // Header: created time, id string, settings block, 0xFF padding.
   putStamp(dv, 0, n.start);
+  out[8] = 2; // record format version 2 (812-byte MM records)
   const id = `AS2X${SYNTH_SERIAL}`;
   for (let k = 0; k < id.length; k++) out[0x50 + k] = id.charCodeAt(k);
+  out[0x68] = 1; // device type
+  out.set([0, 0, 1, 9], 0x69); // software version (invented), least significant byte first -> "9.01.00.00"
+  out.set([0, 2, 0, 0], 0x6d); // hardware version -> "2.00"
   out.set(settingsBlock(n.start), 0x140);
   out.fill(0xff, 0x1c0, DAT_HEADER_SIZE);
 
@@ -212,11 +240,13 @@ function buildDat(n: SynthNight, seed: number): Uint8Array {
       const flow = 22 * breath * scale[i]!;
       const noise = (rand() - 0.5) * 2;
       put(SLOT.setPressure + k, setP);
-      put(SLOT.blowerPressure + k, setP + 3 + breath * 2);
+      put(SLOT.pressureFeedback + k, setP + 3 + breath * 2);
       put(SLOT.maskPressure + k, setP - 1 + breath * 3);
-      put(170 + k, Math.max(0, 40 + breath * 30 * scale[i]!));
+      put(SLOT.snore + k, Math.max(0, 40 + breath * 30 * scale[i]!));
       put(SLOT.patientFlow + k, 500 + flow + noise);
-      put(270 + k, Math.floor(Math.abs(breath) * 8));
+      // Leak flow: whole L/min per second, +-1 alternating so the per-second mean is exact.
+      const big = n.largeLeak && i >= n.largeLeak.at && i < n.largeLeak.at + n.largeLeak.seconds;
+      put(SLOT.leakFlow + k, (big ? 95 : n.leakBase - 10 + (i % n.leakMod)) + (k % 2 ? 1 : -1));
       put(SLOT.totalFlow + k, 500 + flow + n.leakBase + (i % n.leakMod) + noise);
     }
     put(374, 25);
@@ -232,7 +262,7 @@ function buildDat(n: SynthNight, seed: number): Uint8Array {
   return out;
 }
 
-const EVENT_CODE = { apnea1: 0xe1, apnea2: 0xe2, hypopnea: 0xe3 } as const;
+const EVENT_CODE = { obstructiveApnea: 0xe1, centralApnea: 0xe2, hypopnea: 0xe3 } as const;
 
 function entry(st: Stamp, code: number, value: number): Uint8Array {
   return Uint8Array.of(st.y - 2000, st.s, st.mo, st.d, code, st.h, st.mi, value);
@@ -247,13 +277,14 @@ function buildBkp(): Uint8Array {
   // Event blocks, chunked per night (like separate ring-buffer writes).
   SYNTH_NIGHTS.forEach((n, ni) => {
     const entries: Uint8Array[] = [];
-    entries.push(entry(recordStamp(n, 0), 0xee, 0)); // session start marker
+    entries.push(entry(recordStamp(n, 0), 0xee, 0)); // treatment start
     for (const [at, p] of n.pressureSteps) entries.push(entry(recordStamp(n, at), 0xe0, Math.round(p * 2)));
     entries.push(entry(recordStamp(n, 300 + ni * 10), 0xe8, n.level)); // level
     for (const ev of n.events) {
       entries.push(entry(recordStamp(n, ev.at), EVENT_CODE[ev.kind], Math.round(pressureAt(n, ev.at) * 2)));
     }
-    entries.push(entry(recordStamp(n, n.records - 1), 0xe7, 0)); // session end marker
+    for (const [at, code, value] of n.extraEvents) entries.push(entry(recordStamp(n, at), code, value));
+    entries.push(entry(recordStamp(n, n.records - 1), 0xef, 0)); // treatment end
     entries.sort((a, b) => cmpEntry(a, b));
     for (let i = 0; i < entries.length; i += 16) {
       const b = new Uint8Array(128).fill(0xff);
@@ -310,14 +341,16 @@ function buildBkp(): Uint8Array {
     putStamp(dv, 0x42, n.start);
     b[0x49] = 0xff;
     dv.setUint16(0x4a, n.sessionNumber, true);
-    dv.setUint16(0x4c, sorted[0]!, true);
+    dv.setUint16(0x4c, Math.round(n.pressureSteps[0]![1] * 10), true); // start pressure
+    dv.setUint16(0x52, Math.round(((n.largeLeak?.seconds ?? 0) / 60) * 10), true); // large-leak minutes x10
+    dv.setUint16(0x56, n.snoreIndexX10, true); // snore index x10
     dv.setUint16(0x4e, Math.round(mean * 10), true);
     dv.setUint16(0x50, p90, true);
     // The device rounds usage (sum of active intervals) up to whole minutes (Likely).
     dv.setUint16(0x54, usageMinutes, true);
-    dv.setUint16(0x58, indexX10(count('apnea1', 'apnea2', 'hypopnea'), usageMinutes), true);
-    dv.setUint16(0x5a, indexX10(count('apnea1', 'apnea2'), usageMinutes), true);
-    dv.setUint16(0x5c, indexX10(count('apnea2'), usageMinutes), true);
+    dv.setUint16(0x58, indexX10(count('obstructiveApnea', 'centralApnea', 'hypopnea'), usageMinutes), true);
+    dv.setUint16(0x5a, indexX10(count('obstructiveApnea', 'centralApnea'), usageMinutes), true);
+    dv.setUint16(0x5c, indexX10(count('centralApnea'), usageMinutes), true);
     dv.setUint16(0x5e, coarse(sorted[n.records - 1]!), true);
     dv.setUint16(0x60, indexX10(count('hypopnea'), usageMinutes), true);
     blocks.push(b);

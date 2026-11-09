@@ -47,8 +47,8 @@ def slim_night(n):
         out["ps"] = {"min": p.get("min"), "mean": p.get("mean"), "p90": p.get("p90")}
         out["mx"] = s.get("observedMaxPressure")
     if ec:
-        out["a1"] = ec.get("apnea1", 0)
-        out["a2"] = ec.get("apnea2", 0)
+        out["a1"] = ec.get("obstructiveApnea", ec.get("apnea1", 0))
+        out["a2"] = ec.get("centralApnea", ec.get("apnea2", 0))
         out["h"] = ec.get("hypopnea", 0)
     return out
 

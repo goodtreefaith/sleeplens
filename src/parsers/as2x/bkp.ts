@@ -11,58 +11,91 @@ import type {
 import { BLOCK_SIZE, parseSettingsBlock } from './settings';
 import { makeDataView, makeLocalTime, readAscii, readTimestamp } from './time';
 
-const EVENT_CODES: Record<number, TherapyEventType> = {
-  0xe0: 'pressureChange',
-  0xe1: 'apnea1',
-  0xe2: 'apnea2',
-  0xe3: 'hypopnea',
-  0xe8: 'level',
-  0xee: 'sessionMarker',
-  0xe7: 'sessionMarker',
-  0xef: 'sessionMarker',
+/**
+ * Event code (low nibble) to type. The same table serves NeoRead's 0xA0-0xAF
+ * codes and the newer firmware's 0xE0-0xEF codes. See TherapyEventType for
+ * the confidence of each.
+ */
+const EVENT_NIBBLES: Record<number, TherapyEventType> = {
+  0x0: 'pressureChange',
+  0x1: 'obstructiveApnea',
+  0x2: 'centralApnea',
+  0x3: 'hypopnea',
+  0x4: 'snoreLevel',
+  0x5: 'largeLeak',
+  0x6: 'flowLimitation',
+  0x7: 'snoreCount',
+  0xe: 'treatmentStart',
+  0xf: 'treatmentEnd',
 };
 
-const PRESSURE_EVENTS = new Set<TherapyEventType>(['pressureChange', 'apnea1', 'apnea2', 'hypopnea']);
+/** Event type for a code byte, or null when the code is outside 0xA0-0xAF and 0xE0-0xEF. */
+export function eventTypeForCode(code: number): TherapyEventType | null {
+  const hi = code & 0xf0;
+  if (hi !== 0xa0 && hi !== 0xe0) return null;
+  if (code === 0xe8) return 'level'; // no NeoRead equivalent (Unresolved)
+  return EVENT_NIBBLES[code & 0x0f] ?? 'unknown';
+}
 
-/** Decode one 8-byte therapy entry: `[yy][ss][MM][dd][code][hh][mi][value]`. */
+const PRESSURE_EVENTS = new Set<TherapyEventType>(['pressureChange', 'obstructiveApnea', 'centralApnea', 'hypopnea']);
+
+/**
+ * Decode one 8-byte therapy entry: `[yy][ss][MM][dd][code][hh][mi][value]`
+ * (firmware 01.01.19 and later). Codes 0xA0-0xAF and 0xE0-0xEF only.
+ *
+ * Older firmware stores a u16 year in bytes 0-1 and no seconds. That form is
+ * recognised when byte 1 is 0x07 and byte 0 is 0xD0 or more (years 2000-2047),
+ * which the newer layout cannot produce (it would mean year 2208 or later).
+ */
 export function parseTherapyEntry(buf: Uint8Array, offset: number): TherapyEvent | null {
-  const yy = buf[offset]!;
+  const b0 = buf[offset]!;
+  const b1 = buf[offset + 1]!;
   const code = buf[offset + 4]!;
-  if (code < 0xe0) return null; // empty (0xFF year handled below) or not an entry
-  if (yy === 0xff) return null;
+  if (b0 === 0xff) return null; // empty entry
+  const eventType = eventTypeForCode(code);
+  if (!eventType) return null;
+  const u16Year = b1 === 0x07 && b0 >= 0xd0;
   const time = makeLocalTime(
-    2000 + yy,
+    u16Year ? b0 | (b1 << 8) : 2000 + b0,
     buf[offset + 2]!,
     buf[offset + 3]!,
     buf[offset + 5]!,
     buf[offset + 6]!,
-    buf[offset + 1]!,
+    u16Year ? 0 : b1,
   );
   if (!time) return null;
-  const eventType = EVENT_CODES[code] ?? 'unknown';
   const value = buf[offset + 7]!;
   const ev: TherapyEvent = { time, eventType, code, value };
   if (PRESSURE_EVENTS.has(eventType)) ev.pressure = value / 2;
-  // Provisional labels (Likely): E1 obstructive, E2 central.
-  if (eventType === 'apnea1') ev.likelyKind = 'obstructive';
-  else if (eventType === 'apnea2') ev.likelyKind = 'central';
   return ev;
 }
+
+const round1 = (x: number) => Math.round(x * 10) / 10;
 
 function parseSessionSummary(buf: Uint8Array, dv: DataView, o: number): SessionSummary | null {
   const start = readTimestamp(dv, o + 6);
   if (!start) return null;
   const u16 = (rel: number) => dv.getUint16(o + rel, true);
+  // NeoRead reads 0xFFFF in these four fields as 0.
+  const idx = (rel: number) => (u16(rel) === 0xffff ? 0 : u16(rel) / 10);
+  const startPressure = dv.getInt16(o + 0x4c, true) / 10;
+  const apneaIndex = idx(0x5a);
+  const centralApneaIndex = idx(0x5c);
   return {
     sessionNumber: u16(4),
     start,
     usageMinutes: u16(0x54),
-    pressure: { min: u16(0x4c) / 10, mean: u16(0x4e) / 10, p90: u16(0x50) / 10 },
-    observedMaxPressure: u16(0x5e) / 10,
+    startPressure,
+    pressure: { min: startPressure, mean: u16(0x4e) / 10, p90: u16(0x50) / 10 },
+    observedMaxPressure: idx(0x5e),
+    largeLeakMinutes: u16(0x52) / 10,
+    snoreIndex: u16(0x56) / 10,
     ahi: u16(0x58) / 10,
-    apneaIndex: u16(0x5a) / 10,
-    apnea2Index: u16(0x5c) / 10,
-    hypopneaIndex: u16(0x60) / 10,
+    apneaIndex,
+    centralApneaIndex,
+    apnea2Index: centralApneaIndex,
+    obstructiveApneaIndex: Math.max(0, round1(apneaIndex - centralApneaIndex)),
+    hypopneaIndex: idx(0x60),
     hasB5Marker: buf[o + 0x40] === 0xb5 && buf[o + 0x41] === 0xb5,
   };
 }

@@ -184,6 +184,25 @@ general guide.
   synthetic session generated from the decoded layout.
 - Exit: channel map documented in `FORMAT_NOTES.md` with confidence levels.
 
+Resolved by cross-checking against Aeonmed's NeoRead reader (see
+`FORMAT_NOTES.md`, "Confirmed (NeoRead)"):
+- Model: `AS2X` is an AS100A (auto CPAP); `.dat` byte 8 gives the record
+  format version, and the header holds firmware and hardware versions.
+- Channels: slots 70-119 measured pressure, 170-219 snore, 220-269 flow,
+  270-319 leak flow.
+- `.bkp`: fixed address map, summary fields (start pressure, large-leak
+  minutes, SNI, central apnea index) and the full `C5 C5` settings list
+  (mode, start/min/max pressure, ramp, comfort, Auto ON/OFF, pressure unit).
+- Events: `E1` obstructive, `E2` central; `E4`-`E7`, `EE`, `EF` likely
+  follow NeoRead's order.
+- Report rules: a valid day is over 4 hours; morning event blocks belong to
+  the previous date.
+
+Still open:
+- Check the new fields against NeoRead's report for 3 nights on the real card
+  (NeoRead runs on Windows only): SNI, large-leak minutes, which leak channel
+  matches the machine's screen, `E4`-`E8`, and the pressure unit values.
+
 ### Phase 1: skeleton and drop flow
 - Vite + React + TS app, tokens, layout shell at all breakpoints.
 - Drop zone, folder walking, zip support, worker plumbing, progress.

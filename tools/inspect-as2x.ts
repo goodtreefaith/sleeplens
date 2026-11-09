@@ -6,9 +6,9 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { detectAs2x } from '../src/parsers/as2x/detect';
-import { summarizeDat } from '../src/parsers/as2x/dat';
+import { parseDatHeader, summarizeDat } from '../src/parsers/as2x/dat';
 import { parseBkp } from '../src/parsers/as2x/bkp';
-import type { BkpParseResult, DatSummary, SessionSummary, TherapyEvent } from '../src/parsers/as2x/types';
+import type { BkpParseResult, DatHeader, DatSummary, SessionSummary, TherapyEvent } from '../src/parsers/as2x/types';
 
 const args = process.argv.slice(2);
 const json = args.includes('--json');
@@ -68,6 +68,8 @@ interface NightRow {
   pressureP90: number;
   activeIntervals: number;
   leakMedian: number;
+  /** Median of NeoRead's leak flow channel (slots 270-319), L/min. */
+  leakFlowMedian: number;
   session: SessionSummary | null;
   eventCounts: Record<string, number> | null;
   sessions: Array<{ start: string; end: string; minutes: number }>;
@@ -86,8 +88,10 @@ function match(sum: DatSummary): { session: SessionSummary | null; events: Thera
 
 const rows: NightRow[] = [];
 const detail: Array<{ events: TherapyEvent[] }> = [];
+let header: DatHeader | null = null;
 for (const n of nights) {
   const buf = readFileSync(join(cardDir, n.path)); // one file at a time
+  if (!header) header = parseDatHeader(buf);
   const sum = summarizeDat(buf, { includeSeries: false });
   const { session, events } = match(sum);
   let counts: Record<string, number> | null = null;
@@ -105,6 +109,7 @@ for (const n of nights) {
     pressureP90: sum.pressure.p90,
     activeIntervals: sum.sessions.length,
     leakMedian: sum.leak.median,
+    leakFlowMedian: sum.leakFlow.median,
     session,
     eventCounts: counts,
     recordCount: sum.recordCount,
@@ -115,10 +120,24 @@ for (const n of nights) {
 }
 
 const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+// Device facts from the first night's header. The device ID itself carries the serial, so it is never printed.
+const device = header
+  ? {
+      model: header.modelName ?? 'unknown',
+      idPrefix: header.deviceModel,
+      formatVersion: header.formatVersion,
+      softwareVersion: header.softwareVersion,
+      hardwareVersion: header.hardwareVersion,
+    }
+  : null;
+const settings = header?.settings ?? null;
 
 if (json) {
   const events = onlyNight && detail[0] ? detail[0].events.map(({ time, ...e }) => ({ time: time.iso, ...e })) : undefined;
-  console.log(JSON.stringify({ serial: '<SERIAL>', nights: rows, ...(events ? { events } : {}) }, null, 2));
+  const settingsOut = settings ? (({ raw: _raw, time, ...rest }) => ({ time: time?.iso ?? null, ...rest }))(settings) : null;
+  console.log(
+    JSON.stringify({ serial: '<SERIAL>', device, settings: settingsOut, nights: rows, ...(events ? { events } : {}) }, null, 2),
+  );
 } else {
   const hm = (min: number) => {
     const t = Math.round(min);
@@ -128,12 +147,22 @@ if (json) {
   console.log(
     `Aeonmed AS100 series card <SERIAL>: ${detection.nights.length} nights, ${detection.months.length} months, bkp ${bkp ? 'found' : 'missing'}`,
   );
-  console.log('date      start-end    usage  mean   p90  leak   AHI  events');
+  if (device)
+    console.log(
+      `device: ${device.model} (${device.idPrefix}), firmware ${device.softwareVersion ?? '?'}, hardware ${device.hardwareVersion ?? '?'}, night file format v${device.formatVersion}`,
+    );
+  if (settings)
+    console.log(
+      `settings (first night): mode ${settings.modeLabel}, start ${settings.startPressure}, min ${settings.minPressure}, max ${settings.maxPressure}, fixed ${settings.fixedPressure} cmH2O, ramp ${settings.rampMinutes} min, humidifier ${settings.humidifierLevel}, AS-Elex ${settings.comfortLevel}, auto on ${settings.autoOn ? 'yes' : 'no'}, auto off ${settings.autoOff ? 'yes' : 'no'}`,
+    );
+  if (header && !header.recordsSupported) console.log('Night files use the version 1 (512-byte) record layout, which is not decoded.');
+  const SHORT: Record<string, string> = { obstructiveApnea: 'OA', centralApnea: 'CA', hypopnea: 'H' };
+  console.log('date      start-end    usage  mean   p90  leak   AHI  events (OA obstructive, CA central, H hypopnea)');
   for (const r of rows) {
     const ev = r.eventCounts
       ? Object.entries(r.eventCounts)
-          .filter(([k]) => ['apnea1', 'apnea2', 'hypopnea'].includes(k))
-          .map(([k, v]) => `${v} ${k}`)
+          .filter(([k]) => k in SHORT)
+          .map(([k, v]) => `${v} ${SHORT[k]}`)
           .join(' + ') || '0'
       : '-';
     console.log(
@@ -156,10 +185,14 @@ if (json) {
     if (r.session) {
       const s = r.session;
       console.log(
-        `bkp summary: session ${s.sessionNumber}, usage ${s.usageMinutes} min, pressure min/mean/P90 ${s.pressure.min}/${s.pressure.mean}/${s.pressure.p90}, observed max ${s.observedMaxPressure}, AHI ${s.ahi}, apnea index ${s.apneaIndex}, type-2 index ${s.apnea2Index}, hypopnea index ${s.hypopneaIndex}`,
+        `bkp summary: session ${s.sessionNumber}, usage ${s.usageMinutes} min, start pressure ${s.startPressure}, mean/P90 ${s.pressure.mean}/${s.pressure.p90}, max ${s.observedMaxPressure} cmH2O, large leak ${s.largeLeakMinutes} min, SNI ${s.snoreIndex}`,
       );
+      console.log(
+        `  AHI ${s.ahi}, apnea index ${s.apneaIndex} (central ${s.centralApneaIndex}, obstructive ${s.obstructiveApneaIndex}), hypopnea index ${s.hypopneaIndex}`,
+      );
+      console.log(`  leak (slot 384) median ${r.leakMedian}, leak flow (slots 270-319) median ${r.leakFlowMedian} L/min`);
       for (const e of detail[0]!.events)
-        console.log(`  ${e.time.iso.slice(11)}  ${e.eventType}${e.likelyKind ? ` (likely ${e.likelyKind}, provisional)` : ''} ${e.pressure ?? e.value}`);
+        console.log(`  ${e.time.iso.slice(11)}  ${e.eventType} (0x${e.code.toString(16).toUpperCase()}) ${e.pressure ?? e.value}`);
     } else console.log('No matching bkp session summary (older than the ring buffer, or no bkp).');
   }
   if (bkp && !onlyNight) console.log(`\nbkp: ${bkp.sessions.length} session summaries, ${bkp.events.length} events, ${bkp.counters.length} counter records, ${bkp.stats.unknownBlocks} unknown blocks`);

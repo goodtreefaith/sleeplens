@@ -31,7 +31,7 @@ contents and no server. You can save the page and run it offline.
 
 | Machine family | SD card layout | Status |
 | --- | --- | --- |
-| Aeonmed AS100 series (reports itself as `AS2X`) | `<serial><YYYYMM>/<YYYYMMDD>.dat` + `<serial>.bkp` | Being decoded (first target) |
+| Aeonmed AS100 series (reports itself as `AS2X`) | `<serial><YYYYMM>/<YYYYMMDD>.dat` + `<serial>.bkp` | Being decoded (first target); format notes cross-checked against Aeonmed's NeoRead reader |
 | ResMed AirSense 10 / 11 | `DATALOG/`, `STR.edf` (EDF+) | Planned, format is public |
 | Philips DreamStation | `P-Series/` | Later, help wanted |
 
@@ -58,7 +58,10 @@ synthetic or fully anonymised (serial numbers, dates and times shifted).
 ## Developer tools
 
 Node 20+ and `npm install` first. Parsers live in `src/parsers/as2x/` (pure
-`DataView` code, reusable in the browser).
+`DataView` code, reusable in the browser). The AS100 format notes in
+[docs/FORMAT_NOTES.md](docs/FORMAT_NOTES.md) were cross-checked against how
+Aeonmed's own NeoRead software reads the card; no NeoRead code is included or
+redistributed, and some fields still need checking on a real card.
 
 - `npm run inspect -- <card folder> [--json] [--night YYYYMMDD]` reads an
   Aeonmed AS100 series card (read-only, one file at a time) and prints one row

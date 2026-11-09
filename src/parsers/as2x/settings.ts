@@ -1,22 +1,45 @@
-import type { SettingsSnapshot } from './types';
+import type { SettingsSnapshot, TherapyModeLabel } from './types';
 import { makeDataView, readTimestamp } from './time';
 
 export const BLOCK_SIZE = 128;
 
-/** Parse a 128-byte `C5 C5` settings block at `offset`. Returns null if the magic is wrong. */
+/** Settings mode byte (0x02) to NeoRead's label. */
+export const THERAPY_MODES: readonly TherapyModeLabel[] = ['CPAP', 'Auto CPAP', 'AUTOS', 'S', 'ST'];
+
+export function therapyModeLabel(mode: number): TherapyModeLabel {
+  return THERAPY_MODES[mode] ?? 'unknown';
+}
+
+/**
+ * Parse a 128-byte `C5 C5` settings block at `offset` with NeoRead's layout.
+ * Returns null if the magic is wrong.
+ */
 export function parseSettingsBlock(buf: Uint8Array, offset: number): SettingsSnapshot | null {
   if (offset + BLOCK_SIZE > buf.length) return null;
   if (buf[offset] !== 0xc5 || buf[offset + 1] !== 0xc5) return null;
   const dv = makeDataView(buf);
   const pressureFields: number[] = [];
   for (const rel of [3, 5, 7, 9]) pressureFields.push(dv.getUint16(offset + rel, true));
+  const p = (rel: number) => dv.getInt16(offset + rel, true) / 10;
+  const u8 = (rel: number) => buf[offset + rel]!;
+  const mode = u8(0x02);
   return {
     time: readTimestamp(dv, offset + 0x21),
     pressureFields,
-    minPressure: dv.getUint16(offset + 0x03, true) / 10,
-    startPressure: dv.getUint16(offset + 0x07, true) / 10,
-    maxPressure: dv.getUint16(offset + 0x09, true) / 10,
-    humidifierLevel: buf[offset + 0x17]!,
+    mode,
+    modeLabel: therapyModeLabel(mode),
+    startPressure: p(0x03),
+    fixedPressure: p(0x05),
+    minPressure: p(0x07),
+    maxPressure: p(0x09),
+    comfortTime: u8(0x14),
+    comfortLevel: u8(0x15) & 0x0f,
+    leakAlert: u8(0x16),
+    humidifierLevel: u8(0x17),
+    rampMinutes: u8(0x18),
+    autoOn: u8(0x19) !== 0,
+    autoOff: u8(0x1a) !== 0,
+    pressureUnit: u8(0x1d),
     raw: buf.slice(offset, offset + BLOCK_SIZE),
   };
 }

@@ -11,16 +11,26 @@ import { makeDataView, readAscii, readTimestamp } from './time';
 import { parseSettingsBlock } from './settings';
 
 export const DAT_HEADER_SIZE = 0x800;
+/** Version 2 record size (magic `MM`). The only layout decoded. */
 export const DAT_RECORD_SIZE = 812;
+/** Version 1 record size (magic `<<`), per NeoRead. Not decoded. */
+export const DAT_RECORD_SIZE_V1 = 512;
 export const SAMPLES_PER_RECORD = 400;
 export const WAVE_SAMPLES = 50;
 
-/** Slot indexes into a record's 400 u16 values (see FORMAT_NOTES). */
+/** Slot indexes into a record's 400 u16 values (see FORMAT_NOTES). Slot s is at record byte 12 + 2s. */
 export const SLOT = {
   setPressure: 20,
+  /** NeoRead "PressureFdb": the pressure NeoRead plots. */
+  pressureFeedback: 70,
+  /** @deprecated alias of `pressureFeedback`. */
   blowerPressure: 70,
   maskPressure: 120,
+  /** NeoRead "Snore", raw. */
+  snore: 170,
   patientFlow: 220,
+  /** NeoRead "LeakFlow", L/min as stored. */
+  leakFlow: 270,
   totalFlow: 320,
   elapsed: 379,
   state: 381,
@@ -30,18 +40,56 @@ export const SLOT = {
 const RECORD_DATA_OFFSET = 12;
 const FLOW_OFFSET = 500;
 
+/** NeoRead's model table, keyed by the first three characters of the device ID. */
+export const MODEL_NAMES: Readonly<Record<string, string>> = {
+  AS1: 'AS100C',
+  AS2: 'AS100A',
+  AS3: 'AS100A',
+  AS4: 'AS100A-R',
+  AS5: 'AS100A-RT',
+  AS6: 'AS100C',
+  AS7: 'AS100C-R',
+  AS8: 'AS100C-RT',
+};
+
+export function modelNameForId(deviceId: string): string | null {
+  return MODEL_NAMES[deviceId.slice(0, 3).toUpperCase()] ?? null;
+}
+
+/**
+ * Format a 4-byte version (least significant byte first) as NeoRead does:
+ * `b3.b2.b1.b0` when b3 != 0, else `b2.b1.b0` when b2 != 0, else `b1.b0`;
+ * every part after the first is two digits. Null when the bytes are all 0x00 or all 0xFF.
+ */
+export function formatDeviceVersion(b: ArrayLike<number>): string | null {
+  const v = [b[0] ?? 0, b[1] ?? 0, b[2] ?? 0, b[3] ?? 0];
+  if (v.every((x) => x === 0) || v.every((x) => x === 0xff)) return null;
+  const parts = v[3] !== 0 ? [v[3], v[2], v[1], v[0]] : v[2] !== 0 ? [v[2], v[1], v[0]] : [v[1], v[0]];
+  return parts.map((x, i) => (i === 0 ? String(x) : String(x).padStart(2, '0'))).join('.');
+}
+
 export function parseDatHeader(buf: Uint8Array): DatHeader {
   const dv = makeDataView(buf);
   const bodyBytes = Math.max(0, buf.length - DAT_HEADER_SIZE);
-  const id = buf.length >= 0x60 ? readAscii(buf, 0x50, 16) : '';
-  const model = id.slice(0, 4);
+  const formatVersion = buf.length > 8 ? buf[8]! : 0;
+  const recordsSupported = formatVersion !== 1;
+  const recordSize = recordsSupported ? DAT_RECORD_SIZE : DAT_RECORD_SIZE_V1;
+  // Device ID: 24 bytes at 0x50 (NeoRead), `AS2X<SERIAL>`.
+  const id = buf.length >= 0x60 ? readAscii(buf, 0x50, 24) : '';
+  const version = (o: number) => (buf.length >= o + 4 ? formatDeviceVersion(buf.subarray(o, o + 4)) : null);
   return {
     created: readTimestamp(dv, 0),
-    deviceModel: model,
+    formatVersion,
+    recordsSupported,
+    deviceModel: id.slice(0, 4),
+    modelName: modelNameForId(id),
     serial: id.slice(4),
+    deviceType: buf.length > 0x68 ? buf[0x68]! : 0,
+    softwareVersion: version(0x69),
+    hardwareVersion: version(0x6d),
     settings: parseSettingsBlock(buf, 0x140),
-    recordCount: Math.floor(bodyBytes / DAT_RECORD_SIZE),
-    trailingBytes: bodyBytes % DAT_RECORD_SIZE,
+    recordCount: Math.floor(bodyBytes / recordSize),
+    trailingBytes: bodyBytes % recordSize,
   };
 }
 
@@ -52,28 +100,37 @@ export interface IterateOptions {
 
 /**
  * Yield one record per second of therapy. Records are decoded lazily and never
- * retained, so a 30 MB night is processed with constant memory.
+ * retained, so a 30 MB night is processed with constant memory. Version 1
+ * files (512-byte records) yield nothing.
  */
 export function* iterateDatRecords(
   buf: Uint8Array,
   options: IterateOptions = {},
 ): Generator<DatRecord> {
   const dv = makeDataView(buf);
-  const count = parseDatHeader(buf).recordCount;
+  const header = parseDatHeader(buf);
+  if (!header.recordsSupported) return;
+  const count = header.recordCount;
   for (let i = 0; i < count; i++) {
     const base = DAT_HEADER_SIZE + i * DAT_RECORD_SIZE;
     const magicOk = buf[base] === 0x4d && buf[base + 1] === 0x4d;
     const time = magicOk ? readTimestamp(dv, base + 4) : null;
     const data = base + RECORD_DATA_OFFSET;
     const u16 = (slot: number) => dv.getUint16(data + slot * 2, true);
+    // NeoRead reads snore and leak flow as signed 16-bit.
+    const i16 = (slot: number) => dv.getInt16(data + slot * 2, true);
 
     let setSum = 0;
     let maskSum = 0;
+    let snoreSum = 0;
+    let leakFlowSum = 0;
     let flowMin = 65535;
     let flowMax = 0;
     for (let k = 0; k < WAVE_SAMPLES; k++) {
       setSum += u16(SLOT.setPressure + k);
       maskSum += u16(SLOT.maskPressure + k);
+      snoreSum += i16(SLOT.snore + k);
+      leakFlowSum += i16(SLOT.leakFlow + k);
       const f = u16(SLOT.patientFlow + k);
       if (f < flowMin) flowMin = f;
       if (f > flowMax) flowMax = f;
@@ -88,6 +145,8 @@ export function* iterateDatRecords(
       maskPressure: maskSum / WAVE_SAMPLES / 10,
       flowAmplitude: flowMax - flowMin,
       leak: u16(SLOT.leak),
+      leakFlow: leakFlowSum / WAVE_SAMPLES,
+      snore: snoreSum / WAVE_SAMPLES,
       elapsedCounter: u16(SLOT.elapsed),
       stateCode: u16(SLOT.state),
     };
@@ -97,18 +156,24 @@ export function* iterateDatRecords(
 }
 
 function readWaveforms(dv: DataView, data: number): DatWaveforms {
-  const read = (slot: number, scale: (v: number) => number) => {
+  const read = (slot: number, scale: (v: number) => number, signed = false) => {
     const out = new Float32Array(WAVE_SAMPLES);
-    for (let k = 0; k < WAVE_SAMPLES; k++) out[k] = scale(dv.getUint16(data + (slot + k) * 2, true));
+    for (let k = 0; k < WAVE_SAMPLES; k++) {
+      const at = data + (slot + k) * 2;
+      out[k] = scale(signed ? dv.getInt16(at, true) : dv.getUint16(at, true));
+    }
     return out;
   };
   const pressure = (v: number) => v / 10;
   const flow = (v: number) => v - FLOW_OFFSET;
+  const raw = (v: number) => v;
   return {
     setPressure: read(SLOT.setPressure, pressure),
-    blowerPressure: read(SLOT.blowerPressure, pressure),
+    pressureFeedback: read(SLOT.pressureFeedback, pressure),
     maskPressure: read(SLOT.maskPressure, pressure),
+    snore: read(SLOT.snore, raw, true),
     patientFlow: read(SLOT.patientFlow, flow),
+    leakFlow: read(SLOT.leakFlow, raw, true),
     totalFlow: read(SLOT.totalFlow, flow),
   };
 }
@@ -143,12 +208,16 @@ export function summarizeDat(buf: Uint8Array, options: SummarizeOptions = {}): D
         hz: 1,
         pressure: new Float32Array(n),
         leak: new Float32Array(n),
+        leakFlow: new Float32Array(n),
+        snore: new Float32Array(n),
         flowAmplitude: new Float32Array(n),
       }
     : undefined;
 
   const pressureHist = new Uint32Array(2048); // tenths of cmH2O
   const leakHist = new Uint32Array(65536);
+  const leakFlowHist = new Uint32Array(20000); // tenths of L/min, 0-2000
+  let lfMax = 0;
   let pressureSum = 0;
   let valid = 0;
   let invalid = 0;
@@ -169,6 +238,8 @@ export function summarizeDat(buf: Uint8Array, options: SummarizeOptions = {}): D
     if (series) {
       series.pressure[rec.index] = rec.setPressure;
       series.leak[rec.index] = rec.leak;
+      series.leakFlow[rec.index] = rec.leakFlow;
+      series.snore[rec.index] = rec.snore;
       series.flowAmplitude[rec.index] = rec.flowAmplitude;
     }
     if (!rec.valid) {
@@ -189,6 +260,9 @@ export function summarizeDat(buf: Uint8Array, options: SummarizeOptions = {}): D
     if (rec.setPressure > pMax) pMax = rec.setPressure;
     leakHist[rec.leak]!++;
     if (rec.leak > lMax) lMax = rec.leak;
+    const lfTenths = Math.min(Math.max(0, Math.round(rec.leakFlow * 10)), leakFlowHist.length - 1);
+    leakFlowHist[lfTenths]!++;
+    if (rec.leakFlow > lfMax) lfMax = rec.leakFlow;
   }
 
   if (last) closeInterval(last);
@@ -215,6 +289,11 @@ export function summarizeDat(buf: Uint8Array, options: SummarizeOptions = {}): D
       median: histPercentile(leakHist, valid, 0.5),
       p95: histPercentile(leakHist, valid, 0.95),
       max: lMax,
+    },
+    leakFlow: {
+      median: histPercentile(leakFlowHist, valid, 0.5) / 10,
+      p95: histPercentile(leakFlowHist, valid, 0.95) / 10,
+      max: round1(lfMax),
     },
     ...(series ? { series } : {}),
   };
