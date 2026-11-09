@@ -5,3 +5,8 @@
 .rhythm-fox{display:block;object-fit:contain;max-width:100%;height:auto}
 
 .native .rhythm-screen .screen-h .sub{margin-top:8px}
+
+.rhythm-result-identity{display:flex;align-items:center;flex-wrap:wrap;gap:16px;margin-bottom:18px}.rhythm-result-identity>div{flex:1;min-width:150px}.rhythm-result-identity .quiet{margin:0 0 6px}.rhythm-result-character{display:block;width:96px;height:96px;object-fit:contain;flex:none}.rhythm-choice-character{display:block;width:48px;height:48px;object-fit:contain;flex:none}.rhythm-choice>span{min-width:0}
+.rhythm-about:not(:has(>.rhythm-fox)){display:block}
+@media(max-width:600px){.rhythm-choice{gap:8px}.rhythm-choice-character{width:36px;height:36px}}
+.rhythm-screen [tabindex="-1"],.rhythm-result-identity{scroll-margin-top:76px}

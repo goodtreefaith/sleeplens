@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { clearRhythmProfile, EMPTY_RHYTHM, focusOverlapsSleep, readRhythmProfile, rhythmErrors, rhythmLabel, saveRhythmProfile, windowMinutes, type RhythmDraft } from "./rhythm";
+import { clearRhythmProfile, EMPTY_RHYTHM, focusOverlapsSleep, readRhythmProfile, rhythmCharacter, rhythmErrors, rhythmLabel, saveRhythmProfile, windowMinutes, type RhythmDraft } from "./rhythm";
 const answers: RhythmDraft = { preference: "earlier", bedtime: "23:30", wakeTime: "07:00", schedule: "regular", alarm: "free", focusStart: "09:00", focusEnd: "11:00" };
 afterEach(() => { clearRhythmProfile(false); vi.unstubAllGlobals(); });
 
@@ -22,6 +22,13 @@ describe("optional rhythm profile", () => {
     expect(["earlier", "middle", "later", "varies"].map(p => rhythmLabel(p as RhythmDraft["preference"])))
       .toEqual(["Morning-leaning", "Daytime-leaning", "Evening-leaning", "Mixed rhythm"]);
     expect(rhythmErrors({ ...answers, schedule: "variable", alarm: "constrained" })).toEqual([]);
+  });
+  it("pairs each reported preference with its character, keeping the base fox before an answer", () => {
+    expect(["earlier", "middle", "later", "varies", ""].map(p => rhythmCharacter(p as RhythmDraft["preference"])))
+      .toEqual(["./mascots/rhythm-fox-morning.png", "./mascots/rhythm-fox-daytime.png", "./mascots/rhythm-fox-evening.png", "./mascots/rhythm-fox-mixed.png", "./mascots/rhythm-fox.png"]);
+    for (const value of ["unknown", "constructor", "__proto__"]) {
+      expect(rhythmCharacter(value as RhythmDraft["preference"])).toBe("./mascots/rhythm-fox.png");
+    }
   });
   it("keeps demo answers in memory and clears them without touching storage", () => {
     const storage = { setItem: vi.fn(), getItem: vi.fn(), removeItem: vi.fn() };

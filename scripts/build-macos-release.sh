@@ -28,6 +28,7 @@ for name in ('app/src','app/public','app/src-tauri','crates/sleeplens-core','fix
 print(json.dumps({str(p.relative_to(r)):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(set(files))},indent=2,sort_keys=True))
 PY
 }
+source_commit="$(git rev-parse HEAD)"
 snapshot > "$out/source-before.json"
 
 # Keep this preview independent of any Apple account credentials in the caller's environment.
@@ -40,6 +41,7 @@ export CI=true
   cd app
   cargo tauri build --ci --target "$target" --bundles app,dmg --config '{"bundle":{"macOS":{"signingIdentity":"-"}}}' -- --locked
 )
+[[ "$(git rev-parse HEAD)" == "$source_commit" ]] || { echo 'Source commit changed during packaging. Rebuild the candidate.' >&2; exit 1; }
 snapshot > "$out/source-after.json"
 cmp -s "$out/source-before.json" "$out/source-after.json" || { echo 'Build inputs changed during packaging. Do not distribute these artifacts.' >&2; exit 1; }
 
@@ -66,11 +68,26 @@ cp "$dmg" "$out/"
 ditto -c -k --sequesterRsrc --keepParent "$app" "$out/SleepLens_${version}_aarch64.app.zip"
 unzip -t "$out/SleepLens_${version}_aarch64.app.zip" >/dev/null
 
-python3 - "$repo" "$out" "$version" "$target" <<'PY'
-import datetime,json,pathlib,subprocess,sys
-r,out,version,target=sys.argv[1:];out=pathlib.Path(out)
+python3 - "$repo" "$out" "$version" "$target" "$source_commit" <<'PY'
+import datetime,json,pathlib,re,subprocess,sys
+r,out,version,target,source_commit=sys.argv[1:];out=pathlib.Path(out)
 def run(*args):return subprocess.check_output(args,cwd=r,text=True).strip()
-manifest={'product':'SleepLens','version':version,'target':target,'builtAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'sourceCommit':run('git','rev-parse','HEAD'),'sourceDirty':bool(run('git','status','--porcelain')),'sourceState':'Local snapshot; no matching release tag is asserted.','sourceSha256':json.loads((out/'source-before.json').read_text()),'signing':'ad-hoc','developerIdSigned':False,'notarized':False,'rust':run('rustc','--version'),'tauriCli':run('cargo','tauri','--version'),'node':run('node','--version'),'macOS':run('sw_vers','-productVersion'),'runtimeTested':False}
+dirty=bool(run('git','status','--porcelain'))
+stage_source=(pathlib.Path(r)/'crates/sleeplens-core/src/sleep_stages/mod.rs').read_text()
+estimator_version=int(re.search(r'pub const ESTIMATOR_VERSION:\s*u32\s*=\s*(\d+);',stage_source).group(1))
+manifest={
+    'product':'SleepLens','version':version,'target':target,
+    'builtAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    'sourceCommit':source_commit,'sourceDirty':dirty,
+    'sourceState':('Uncommitted local snapshot based on sourceCommit.' if dirty
+                   else 'Clean committed snapshot at sourceCommit. No release tag is asserted.'),
+    'sourceSha256':json.loads((out/'source-before.json').read_text()),
+    'estimatorVersion':estimator_version,
+    'signing':'ad-hoc','developerIdSigned':False,'notarized':False,
+    'rust':run('rustc','--version'),'tauriCli':run('cargo','tauri','--version'),
+    'node':run('node','--version'),'macOS':run('sw_vers','-productVersion'),
+    'runtimeTested':False
+}
 (out/'BUILD_INFO.json').write_text(json.dumps(manifest,indent=2)+'\n')
 (out/'RELEASE_NOTES.md').write_text(f'''# SleepLens {version} preview
 
@@ -81,7 +98,8 @@ Apple Silicon macOS preview. Intel and Windows builds are not included.
 - See the new owl branding and score artwork.
 - Save an optional Rhythm profile from your own sleep preferences, sleep window
   and chosen focus window. The profile describes your answers, not a measured
-  biological rhythm.
+  biological rhythm. Matching fox artwork illustrates the preference you select.
+- Includes version {estimator_version} of the experimental sleep-stage estimator.
 
 This build has an ad-hoc signature. It is not signed with an Apple Developer ID
 and is not notarized. macOS may block a downloaded copy. Do not disable
@@ -104,4 +122,4 @@ PY
   shasum -a 256 --check SHA256SUMS
 )
 printf 'Prepared artifacts: %s\n' "$out"
-printf 'Ad-hoc signed, not notarized. Not installed, committed, tagged or published.\n'
+printf 'Ad-hoc signed, not notarized. No installation, tagging or publication performed.\n'

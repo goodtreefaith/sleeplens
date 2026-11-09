@@ -68,3 +68,27 @@ The full-resolution transparent sources and exact imagegen prompts live in [masc
 The score artwork map is decorative: 0 to 39 uses Rest, 40 to 49 Gentle, 50 to 59 Steady, 60 to 69 Bright, 70 to 84 Happy and 85 to 100 Celebrate. A missing, non-finite or out-of-range score uses Curious. The original owl remains the brand logo. This map changes no score formula, verdict or therapy recommendation.
 
 The apricot fox accompanies the optional Your rhythm screen. It does not identify a biological chronotype or carry a validated productivity claim.
+
+## Reported-rhythm fox variants
+
+The four transparent variants were generated on 2026-11-09 with the built-in
+imagegen tool in `identity-preserve` mode. Each edit used the original
+[apricot fox](mascots/rhythm-fox-source.png) as its character reference.
+The exact prompts are preserved in the four new entries in
+[manifest.json](mascots/manifest.json), with repository-root source paths.
+The earlier manifest entries retain their existing relative paths and prompts.
+
+| Selected preference | Existing label | Source | Bundled web asset |
+| --- | --- | --- | --- |
+| `earlier` | Morning-leaning | [Full resolution](mascots/rhythm-fox-morning-source.png) | [256px PNG](../../app/public/mascots/rhythm-fox-morning.png) |
+| `middle` | Daytime-leaning | [Full resolution](mascots/rhythm-fox-daytime-source.png) | [256px PNG](../../app/public/mascots/rhythm-fox-daytime.png) |
+| `later` | Evening-leaning | [Full resolution](mascots/rhythm-fox-evening-source.png) | [256px PNG](../../app/public/mascots/rhythm-fox-evening.png) |
+| `varies` | Mixed rhythm | [Full resolution](mascots/rhythm-fox-mixed-source.png) | [256px PNG](../../app/public/mascots/rhythm-fox-mixed.png) |
+
+The artwork follows only the selected day preference. Schedule variability,
+alarm constraints, therapy measurements and sleep scores do not choose the
+character. An unanswered or unrecognized preference uses the original fox.
+The images are decorative companions to the self-reported labels, with no
+validated chronotype or predicted-productivity claim. The app uses empty alt
+text because the adjacent text already names the result. The README gallery
+uses the same optimized files as the app and demo.

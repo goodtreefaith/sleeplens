@@ -55,6 +55,16 @@ export function rhythmLabel(preference: DayPreference | ""): RhythmLabel {
   return preference === "earlier" ? "Morning-leaning" : preference === "middle" ? "Daytime-leaning" : preference === "later" ? "Evening-leaning" : "Mixed rhythm";
 }
 
+export function rhythmCharacter(preference: DayPreference | ""): string {
+  switch (preference) {
+    case "earlier": return "./mascots/rhythm-fox-morning.png";
+    case "middle": return "./mascots/rhythm-fox-daytime.png";
+    case "later": return "./mascots/rhythm-fox-evening.png";
+    case "varies": return "./mascots/rhythm-fox-mixed.png";
+    default: return "./mascots/rhythm-fox.png";
+  }
+}
+
 function validatedProfile(value: unknown): RhythmProfile | null {
   if (!value || typeof value !== "object") return null;
   const p = value as Record<string, unknown>;

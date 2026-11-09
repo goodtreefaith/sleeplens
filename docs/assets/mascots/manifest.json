@@ -62,5 +62,53 @@
     "tool": "built-in imagegen",
     "date": "2026-11-09",
     "prompt": "Use case: logo-brand\nAsset type: SleepLens chronotype companion mascot.\nInput image role: style reference only, SleepLens owl; create a different character.\nPrimary request: Create a friendly small fox as a companion to the SleepLens owl, representing a person's daily rhythm and preferred focus hours. Use the same rounded, simple flat illustration style and proportions. Fox has a warm muted apricot body, off-white cheek/chest shapes, charcoal eyes and nose, small deep-teal details, upright triangular ears and a large rounded curled tail with an off-white tip. One tiny pale-teal circular lens detail around its right eye subtly connects the brand family. Calm alert expression, softly open eyes, relaxed pose, suitable for adult users. It must be unmistakably a fox, not another owl.\nComposition: single complete character centered on square genuine transparent canvas,10%clear margins,no background. Preserve small-icon readability.\nConstraints: no words,numbers,medical symbols,clocks,productivity percentages,accessories,shadows or extra characters. No 3D or photorealism. This character is decorative and must not imply scientific diagnosis."
+  },
+  {
+    "name": "rhythm-fox-morning",
+    "label": "Morning-leaning",
+    "preference": "earlier",
+    "pathBase": "repository root",
+    "source": "docs/assets/mascots/rhythm-fox-morning-source.png",
+    "webAsset": "app/public/mascots/rhythm-fox-morning.png",
+    "referenceImage": "docs/assets/mascots/rhythm-fox-source.png",
+    "tool": "built-in imagegen",
+    "date": "2026-11-09",
+    "prompt": "Use case: identity-preserve\nAsset type: SleepLens reported-rhythm character image, Morning-leaning.\nInput image role: edit target and exact character identity reference.\nChange only the pose/expression and the small time-of-day cue: An energetic but gentle morning stretch: both forepaws lifted outward, eyes curved in a soft pleased smile, tail comfortably curled. Add one small muted-gold rising-sun cue beside the head.\nPreserve exactly the reference fox's identity: warm muted apricot body, off-white cheeks/chest/tail tip, deep teal inner-ear details and feet, charcoal eyes/nose, pale-teal circular lens around its right eye, rounded head/body proportions, same soft flat illustration with restrained shading. Same friendly adult-facing brand family as the SleepLens owl. Entire single fox visible, ears and paws and tail uncropped. Character centered, square transparent canvas, generous 10 percent clear margins including cue. Artwork is decorative for a self-reported preference, not a scientific diagnosis or predicted productivity.\nConstraints: genuine transparent alpha, no background or floor or shadow, no text or letters or numbers, no clocks, no medical symbols, no clothing or other accessories, no extra characters, no 3D, no photorealism. Keep high readability as a 96px character and 48px thumbnail."
+  },
+  {
+    "name": "rhythm-fox-daytime",
+    "label": "Daytime-leaning",
+    "preference": "middle",
+    "pathBase": "repository root",
+    "source": "docs/assets/mascots/rhythm-fox-daytime-source.png",
+    "webAsset": "app/public/mascots/rhythm-fox-daytime.png",
+    "referenceImage": "docs/assets/mascots/rhythm-fox-source.png",
+    "tool": "built-in imagegen",
+    "date": "2026-11-09",
+    "prompt": "Use case: identity-preserve\nAsset type: SleepLens reported-rhythm character image, Daytime-leaning.\nInput image role: edit target and exact character identity reference.\nChange only the pose/expression and the small time-of-day cue: An alert friendly daytime pose: sitting upright, one forepaw raised in a welcoming wave, bright open eyes, tail resting at the side. Add one small muted-gold full-sun cue beside the head.\nPreserve exactly the reference fox's identity: warm muted apricot body, off-white cheeks/chest/tail tip, deep teal inner-ear details and feet, charcoal eyes/nose, pale-teal circular lens around its right eye, rounded head/body proportions, same soft flat illustration with restrained shading. Same friendly adult-facing brand family as the SleepLens owl. Entire single fox visible, ears and paws and tail uncropped. Character centered, square transparent canvas, generous 10 percent clear margins including cue. Artwork is decorative for a self-reported preference, not a scientific diagnosis or predicted productivity.\nConstraints: genuine transparent alpha, no background or floor or shadow, no text or letters or numbers, no clocks, no medical symbols, no clothing or other accessories, no extra characters, no 3D, no photorealism. Keep high readability as a 96px character and 48px thumbnail."
+  },
+  {
+    "name": "rhythm-fox-evening",
+    "label": "Evening-leaning",
+    "preference": "later",
+    "pathBase": "repository root",
+    "source": "docs/assets/mascots/rhythm-fox-evening-source.png",
+    "webAsset": "app/public/mascots/rhythm-fox-evening.png",
+    "referenceImage": "docs/assets/mascots/rhythm-fox-source.png",
+    "tool": "built-in imagegen",
+    "date": "2026-11-09",
+    "prompt": "Use case: identity-preserve\nAsset type: SleepLens reported-rhythm character image, Evening-leaning.\nInput image role: edit target and exact character identity reference.\nChange only the pose/expression and the small time-of-day cue: A relaxed alert evening pose: seated with one forepaw resting on the curled tail, head slightly tilted, calm open eyes and friendly expression. Add one small deep-teal crescent-moon cue beside the head. Do not make the fox asleep or exhausted.\nPreserve exactly the reference fox's identity: warm muted apricot body, off-white cheeks/chest/tail tip, deep teal inner-ear details and feet, charcoal eyes/nose, pale-teal circular lens around its right eye, rounded head/body proportions, same soft flat illustration with restrained shading. Same friendly adult-facing brand family as the SleepLens owl. Entire single fox visible, ears and paws and tail uncropped. Character centered, square transparent canvas, generous 10 percent clear margins including cue. Artwork is decorative for a self-reported preference, not a scientific diagnosis or predicted productivity.\nConstraints: genuine transparent alpha, no background or floor or shadow, no text or letters or numbers, no clocks, no medical symbols, no clothing or other accessories, no extra characters, no 3D, no photorealism. Keep high readability as a 96px character and 48px thumbnail."
+  },
+  {
+    "name": "rhythm-fox-mixed",
+    "label": "Mixed rhythm",
+    "preference": "varies",
+    "pathBase": "repository root",
+    "source": "docs/assets/mascots/rhythm-fox-mixed-source.png",
+    "webAsset": "app/public/mascots/rhythm-fox-mixed.png",
+    "referenceImage": "docs/assets/mascots/rhythm-fox-source.png",
+    "tool": "built-in imagegen",
+    "date": "2026-11-09",
+    "prompt": "Use case: identity-preserve\nAsset type: SleepLens reported-rhythm character image, Mixed rhythm.\nInput image role: edit target and exact character identity reference.\nChange only the pose/expression and the small time-of-day cue: A playful curious variable-rhythm pose: head tilted the opposite way, one forepaw gently touching the chest, the other opened outward, friendly open eyes, tail curled across the front. Add one small simple half-sun/half-crescent cue beside the head, in muted gold and teal.\nPreserve exactly the reference fox's identity: warm muted apricot body, off-white cheeks/chest/tail tip, deep teal inner-ear details and feet, charcoal eyes/nose, pale-teal circular lens around its right eye, rounded head/body proportions, same soft flat illustration with restrained shading. Same friendly adult-facing brand family as the SleepLens owl. Entire single fox visible, ears and paws and tail uncropped. Character centered, square transparent canvas, generous 10 percent clear margins including cue. Artwork is decorative for a self-reported preference, not a scientific diagnosis or predicted productivity.\nConstraints: genuine transparent alpha, no background or floor or shadow, no text or letters or numbers, no clocks, no medical symbols, no clothing or other accessories, no extra characters, no 3D, no photorealism. Keep high readability as a 96px character and 48px thumbnail."
   }
 ]

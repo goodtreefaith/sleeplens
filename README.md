@@ -8,11 +8,13 @@ Understand your CPAP nights, with your data stored on your computer.
 
 SleepLens is a free, open-source desktop app for people who want to make sense of their CPAP therapy. Import an Aeonmed AS100 SD card, check your nightly usage and mask seal, and explore the pressure and breathing events behind the summary. Plain-language explanations sit next to the numbers.
 
-**Early macOS build · Aeonmed AS100A card support · Local storage · MIT licensed**
+**Apple Silicon macOS preview · Aeonmed AS100A card support · Local storage · MIT licensed**
 
-[Explore the demo](https://goodtreefaith.github.io/sleeplens/demo/) · [Build for macOS](#build-for-macos) · [Contribute](CONTRIBUTING.md) · [Request a feature](https://github.com/goodtreefaith/sleeplens/issues/new/choose)
+[Download the macOS preview](https://github.com/goodtreefaith/sleeplens/releases/tag/v0.1.0-preview.1) · [Explore the demo](https://goodtreefaith.github.io/sleeplens/demo/) · [Build for macOS](#build-for-macos) · [Contribute](CONTRIBUTING.md) · [Request a feature](https://github.com/goodtreefaith/sleeplens/issues/new/choose)
 
-> SleepLens is in early development. There is no published installer yet. The browser demo uses the current app interface with made-up data; it does not import your SD card. Build the desktop app to read a supported card.
+> The macOS preview is for Apple Silicon. Its ad-hoc signature is not an Apple Developer ID signature, and the app is not notarized. macOS may block a downloaded copy. You can also [build from source](#build-for-macos).
+>
+> The browser demo uses the current interface with made-up data and does not import your SD card.
 
 ## See your nights more clearly
 
@@ -30,6 +32,12 @@ The app also includes an experimental sleep score and breathing-based sleep stag
 The optional Your rhythm screen asks about the part of the day you prefer, your usual free-day sleep window and a focus window you choose. Its labels reflect your answers. This original short reflection is not a validated chronotype test, and SleepLens does not measure your body clock or predict a productivity peak. Variable schedules and alarm constraints appear with the result.
 
 Answers stay on your computer in the desktop app. In the demo, they stay in page memory and disappear on reload. You can skip, edit or clear them, and they never change therapy measurements or your sleep score.
+
+A matching fox illustrates the day preference you choose.
+
+| Morning-leaning | Daytime-leaning | Evening-leaning | Mixed rhythm |
+| --- | --- | --- | --- |
+| <img src="app/public/mascots/rhythm-fox-morning.png" alt="" width="112" height="112"> | <img src="app/public/mascots/rhythm-fox-daytime.png" alt="" width="112" height="112"> | <img src="app/public/mascots/rhythm-fox-evening.png" alt="" width="112" height="112"> | <img src="app/public/mascots/rhythm-fox-mixed.png" alt="" width="112" height="112"> |
 
 The score card's owl has six decorative expressions, plus a curious state when the score is unavailable. The artwork does not change score calculations or their meaning.
 
@@ -97,7 +105,7 @@ The output is `target/release/bundle/macos/SleepLens.app` at the repository root
 ## What's next
 
 - Printable summaries for appointments.
-- Signed and notarized macOS distribution.
+- Developer ID signing and notarization for macOS.
 - Windows packaging and device testing.
 - ResMed support, followed by more machine families.
 

@@ -418,3 +418,19 @@ and Apple Silicon preview release after the affected checks and packaging.
 Preserve the optional questionnaire's self-report meaning and all validation
 limits. This does not authorize replacing the installed app or accepting a new
 data-use agreement.
+
+### Reported-rhythm character refinement, 2026-11-09
+
+Faith requested character images for the chronotype preferences after approving
+commits. Four matching fox variants now illustrate Morning-leaning,
+Daytime-leaning, Evening-leaning and Mixed rhythm. The chosen answer controls
+the image; labels, validation, storage and score calculations are unchanged.
+The selected portrait replaces the neutral result-aside fox. The neutral fox
+returns for intro, questionnaire and cleared states. Scoped phone spacing and
+focus clearance keep the selected portrait and heading visible below the header.
+
+TypeScript, 132 frontend tests, demo build, image loading/mapping, edit/cancel,
+clear/focus and phone/laptop/desktop geometry checks pass. Independent code and
+rendered design reviews found no remaining material defect. The Rust evaluation
+source hashes are unchanged. Rebuild the public preview from the clean committed
+source, preserving earlier local candidates and their accurate provenance.

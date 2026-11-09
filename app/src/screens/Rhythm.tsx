@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Go } from "../App";
 import { api } from "../api";
-import { clearRhythmProfile, EMPTY_RHYTHM, focusOverlapsSleep, readRhythmProfile, rhythmErrors, rhythmLabel, saveRhythmProfile, windowMinutes, type RhythmDraft } from "../lib/rhythm";
+import { clearRhythmProfile, EMPTY_RHYTHM, focusOverlapsSleep, readRhythmProfile, rhythmCharacter, rhythmErrors, rhythmLabel, saveRhythmProfile, windowMinutes, type RhythmDraft } from "../lib/rhythm";
 import { hm } from "../lib/format";
 import "../rhythm.css";
 
@@ -31,8 +31,10 @@ export function RhythmScreen({ go }: { go: Go }) {
   const update = <K extends keyof RhythmDraft>(key: K, value: RhythmDraft[K]) => { setError(null); setDraft(previous => ({ ...previous, [key]: value })); };
   const errors = rhythmErrors(draft, step);
   useEffect(() => {
-    if (editing) questionHeading.current?.focus();
-    else (profile ? resultHeading.current : pageHeading.current)?.focus();
+    const heading = editing ? questionHeading.current : profile ? resultHeading.current : pageHeading.current;
+    heading?.focus({ preventScroll: true });
+    const visible = !editing && profile ? heading?.closest(".rhythm-result-identity") : heading;
+    visible?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [editing, step, profile]);
 
   function notNow() {
@@ -66,7 +68,7 @@ export function RhythmScreen({ go }: { go: Go }) {
         <div className="actions"><button type="button" className="btn primary" onClick={begin}>Explore my rhythm</button><button type="button" className="btn" onClick={notNow}>Not now</button></div>
       </section> : null}
       {!editing && profile ? <section className="card rhythm-result" aria-labelledby="rhythm-result-heading">
-        <p className="quiet">Your reported rhythm</p><h2 id="rhythm-result-heading" ref={resultHeading} tabIndex={-1}>{rhythmLabel(profile.preference)}</h2>
+        <div className="rhythm-result-identity"><img className="rhythm-result-character" src={rhythmCharacter(profile.preference)} width="96" height="96" alt="" aria-hidden="true" /><div><p className="quiet">Your reported rhythm</p><h2 id="rhythm-result-heading" ref={resultHeading} tabIndex={-1}>{rhythmLabel(profile.preference)}</h2></div></div>
         <p>This reflects your answers, not a measurement of your body clock.</p>
         {profile.schedule === "variable" || profile.alarm === "constrained" ? <p className="banner info" role="note">{profile.schedule === "variable" ? "Your variable or shift schedule can change the timing that works for you. " : ""}{profile.alarm === "constrained" ? "Alarms or obligations limit your free-day timing, so it may not reflect your preferred schedule." : ""}</p> : null}
         {focusOverlapsSleep(profile) ? <p className="banner info" role="note">Your focus window overlaps your reported sleep window. Adjust either window if you plan to use them on the same day.</p> : null}
@@ -77,7 +79,7 @@ export function RhythmScreen({ go }: { go: Go }) {
       {editing ? <form className="card rhythm-question" onSubmit={e => { e.preventDefault(); if (errors.length) return; if (step < 2) setStep(step + 1); else save(); }}>
         <div className="rhythm-question-top"><p className="quiet">Question {step + 1} of 3</p><button type="button" className="btn link" onClick={notNow}>Not now</button></div>
         <h2 ref={questionHeading} tabIndex={-1}>{STEP_NAMES[step]}</h2>
-        {step === 0 ? <fieldset><legend>On a day without work deadlines, which timing do you tend to prefer?</legend><div className="rhythm-choices">{PREFERENCES.map(([value, label, description]) => <label className="rhythm-choice" key={value}><input type="radio" name="preference" value={value} checked={draft.preference === value} onChange={() => update("preference", value)} /><span><strong>{label}</strong><small>{description}</small></span></label>)}</div></fieldset> : null}
+        {step === 0 ? <fieldset><legend>On a day without work deadlines, which timing do you tend to prefer?</legend><div className="rhythm-choices">{PREFERENCES.map(([value, label, description]) => <label className="rhythm-choice" key={value}><input type="radio" name="preference" value={value} checked={draft.preference === value} onChange={() => update("preference", value)} /><img className="rhythm-choice-character" src={rhythmCharacter(value)} width="48" height="48" alt="" aria-hidden="true" /><span><strong>{label}</strong><small>{description}</small></span></label>)}</div></fieldset> : null}
         {step === 1 ? <><p>Think about a typical day without work or school. Use your usual local clock times; an overnight window is fine.</p><div className="rhythm-times"><label>Usual bedtime<input type="time" required value={draft.bedtime} onChange={e => update("bedtime", e.target.value)} /></label><label>Usual wake time<input type="time" required value={draft.wakeTime} onChange={e => update("wakeTime", e.target.value)} /></label></div>{windowMinutes(draft.bedtime, draft.wakeTime) != null ? <p className="quiet">{hm(windowMinutes(draft.bedtime, draft.wakeTime)!)} in this reported window{draft.wakeTime < draft.bedtime ? ", ending the next day" : ""}.</p> : null}
           <fieldset><legend>How steady is your schedule?</legend><div className="rhythm-choices">{[["regular", "Usually regular"], ["variable", "Variable or shift work"]].map(([value, label]) => <label className="rhythm-choice" key={value}><input type="radio" name="schedule" checked={draft.schedule === value} onChange={() => update("schedule", value as "regular" | "variable")} /><span>{label}</span></label>)}</div></fieldset>
           <fieldset><legend>Do alarms or other obligations limit that free-day timing?</legend><div className="rhythm-choices">{[["free", "Usually no"], ["constrained", "Yes, they often do"]].map(([value, label]) => <label className="rhythm-choice" key={value}><input type="radio" name="alarm" checked={draft.alarm === value} onChange={() => update("alarm", value as "free" | "constrained")} /><span>{label}</span></label>)}</div></fieldset></> : null}
@@ -86,7 +88,7 @@ export function RhythmScreen({ go }: { go: Go }) {
         <div className="actions">{step > 0 ? <button type="button" className="btn" onClick={() => setStep(step - 1)}>Back</button> : null}<button type="submit" className="btn primary" disabled={errors.length > 0}>{step === 2 ? "Save my rhythm" : "Continue"}</button></div>
       </form> : null}
       {error ? <p className="error-box" role="alert">{error}</p> : null}
-    </div><aside className="card rhythm-about"><img className="rhythm-fox" src="./mascots/rhythm-fox.png" width="100" height="100" alt="" aria-hidden="true" /><h2>Your choice, kept local</h2><p>{persistent ? "Answers stay in this app on your computer. After you answer, you can clear them on this page or use Delete all data in Settings." : "Demo answers stay in memory for this page only. Reloading clears them."}</p><p>Answering is optional. SleepLens does not infer a chronotype from CPAP data, and these answers do not change therapy measurements.</p></aside></div>
+    </div><aside className="card rhythm-about">{editing || !profile ? <img className="rhythm-fox" src="./mascots/rhythm-fox.png" width="100" height="100" alt="" aria-hidden="true" /> : null}<h2>Your choice, kept local</h2><p>{persistent ? "Answers stay in this app on your computer. After you answer, you can clear them on this page or use Delete all data in Settings." : "Demo answers stay in memory for this page only. Reloading clears them."}</p><p>Answering is optional. SleepLens does not infer a chronotype from CPAP data, and these answers do not change therapy measurements.</p></aside></div>
     <dialog className="confirm" ref={clearDialog} aria-labelledby="clear-rhythm-heading"><h2 id="clear-rhythm-heading">Clear your rhythm answers?</h2><p>This removes your answers and personal planning window. Therapy measurements stay unchanged.</p><div className="actions"><button type="button" className="btn" autoFocus onClick={() => clearDialog.current?.close()}>Keep answers</button><button type="button" className="btn danger" onClick={clear}>Clear answers</button></div></dialog>
   </section>;
 }

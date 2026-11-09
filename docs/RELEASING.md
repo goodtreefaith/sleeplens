@@ -23,7 +23,9 @@ See [Tauri's macOS signing guide](https://v2.tauri.app/distribute/sign/macos/).
 Finish feature work and review before building a candidate. Freeze the UI,
 icons and estimator inputs so the installer matches the final reviewed app.
 Run the checks appropriate to those changes, including the Rust workspace,
-frontend tests/build and synthetic sample-mode smoke checks.
+frontend tests/build and synthetic sample-mode smoke checks. For a public
+candidate, commit the reviewed source first and confirm that `git status
+--short` is empty. Build from that exact commit.
 
 On a Mac with Node.js 20+, stable Rust, Xcode build tools and Tauri CLI 2.12.4:
 
@@ -43,36 +45,42 @@ gets a separate directory and preserves earlier candidates. It contains:
 - `SleepLens_<version>_aarch64.dmg`.
 - `SleepLens_<version>_aarch64.app.zip`.
 - `BUILD_INFO.json` with the commit, dirty state, build-tool versions, signing
-  status and SHA256 hashes of the local build inputs.
+  status, estimator version and SHA256 hashes of the local build inputs.
 - `RELEASE_NOTES.md`, a preview description to complete after runtime review.
 - `SHA256SUMS` covering those files.
 
-The source snapshot may include uncommitted work. A commit hash in build info
-identifies its base; it does not mean the artifact matches that commit alone.
-The helper compares build-input hashes before and after packaging and stops
-if they change. It checks the bundle identifier/version, synthetic resource hashes, arm64
-executable, ad-hoc code signature, DMG, ZIP and final checksums. It disables Finder layout automation during DMG creation. It does not launch
-the app or access imported records.
+For local review, the helper can also snapshot uncommitted work and records
+that state. In that case, the commit identifies a base, rather than the complete
+source. A public candidate should have `sourceDirty: false`.
+
+The helper compares the commit and build-input hashes before and after
+packaging and stops if they change. It checks the bundle identifier/version,
+synthetic resource hashes, arm64 executable, ad-hoc code signature, DMG, ZIP
+and final checksums. It disables Finder layout automation during DMG creation.
+It does not launch the app or access imported records.
 Only the bundled synthetic card is an app resource. Public PSG datasets and
 evaluation results remain outside the installer.
 
 ## Review the candidate
 
 From the artifact directory, run `shasum -a 256 --check SHA256SUMS`.
-Inspect the DMG's app and Applications link without replacing an installed app.
+Mount the DMG read-only with `-noautoopen -nobrowse`. Confirm that its root
+contains `SleepLens.app` and an `Applications` symlink to `/Applications`, then
+detach it. Do not replace an installed app during this inspection.
 Use a separate synthetic-data app environment for any runtime review; preserve
 existing user data and the installed application. Record the tested macOS and
 architecture, actual launch/sample-import result, and unresolved issues.
 
 Update the release notes with the final implemented behavior and verified
-results. If release notes change, regenerate `SHA256SUMS` for the DMG, ZIP,
+results. Distinguish a separate QA identifier/debug build from the exact release
+artifact. Keep `runtimeTested: false` when that release bundle was not launched. If release notes change, regenerate `SHA256SUMS` for the DMG, ZIP,
 `BUILD_INFO.json` and notes, then check it again. Do not describe packaging-only
 checks as a tested installation or claim clinical accuracy without held-out
 validation evidence.
 
 Review the concrete candidate and final release notes before committing,
-tagging or publishing. A public preview must disclose its ad-hoc signature and lack of
-notarization.
+tagging or publishing. A public preview must disclose its ad-hoc signature
+and lack of notarization.
 
 ## Manual GitHub build
 
@@ -87,6 +95,12 @@ not run merely because this file exists.
 Download and review the resulting candidate before any separately authorized
 GitHub Release. If publishing through GitHub Releases, attach the DMG, app ZIP,
 checksums, build info and final notes from the same candidate directory.
+Confirm that the release tag points to `BUILD_INFO.json`'s `sourceCommit`. A
+preview tag such as `v0.1.0-preview.1` can package app version `0.1.0`; mark it
+as a prerelease and keep the Apple Silicon and signing limits in its notes.
+Verify the published assets and checksums before describing the download as
+live. The README preview link targets
+[that release](https://github.com/goodtreefaith/sleeplens/releases/tag/v0.1.0-preview.1).
 
 ## Primary references
 
