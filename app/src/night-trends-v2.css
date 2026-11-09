@@ -34,3 +34,22 @@
 .trends-v2 .screen-h .trends-range{flex-basis:100%;display:flex;justify-content:flex-start}
 .typical-range-band{fill:var(--accent);opacity:.09}
 .score-guide{stroke:var(--line-strong);stroke-width:1;stroke-dasharray:2 5}
+
+/* Keep zoomable events beside the charts, and pack supporting cards into pairs. */
+.night-detail-layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px;align-items:start}
+.night-detail-layout>*{min-width:0}
+.night-detail-layout .night-detail-rail{display:grid;grid-template-columns:minmax(0,1fr);gap:20px}
+.night-detail-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start}
+.night-detail-pair>.card{min-width:0}
+.night-detail-layout .events-card .ev-name{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.4}
+.night-detail-layout .ev-label{display:flex;flex-wrap:wrap;column-gap:4px}
+.night-detail-layout .ev-duration{white-space:nowrap}
+.night-detail-layout .evscroll{overscroll-behavior:contain}
+.night-detail-layout .evscroll:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+.night-detail-layout .ev-minimum{display:table;margin-top:3px;padding:1px 5px;border:1px solid var(--line);border-radius:4px;color:var(--muted);font-size:11px;white-space:nowrap}
+@media(min-width:1600px){.night-detail-layout{grid-template-columns:minmax(0,1fr) 380px}}
+@media(min-width:900px) and (max-width:1099px){.night-detail-layout{grid-template-columns:minmax(0,1fr) 260px;gap:16px}.night-detail-layout .card{padding:16px}.night-detail-pair{gap:12px;grid-column:1/-1}.night-detail-layout .night-chart-column{display:contents}.night-detail-layout .night-chart-column>.card{grid-column:1}.night-detail-layout .night-detail-rail{grid-column:2;grid-row:1/span 2}}
+@media(max-width:899px){.night-detail-layout{grid-template-columns:minmax(0,1fr)}.night-detail-layout .night-detail-rail{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.night-detail-pair .stage-summary-list>div{grid-template-columns:102px minmax(0,1fr);gap:8px}
+.night-detail-pair .stage-summary-list dd{grid-template-columns:minmax(20px,1fr) 32px;gap:6px}
+.night-detail-pair .stage-summary-list .stage-rounded-duration{grid-column:1/-1}

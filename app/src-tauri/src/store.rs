@@ -34,7 +34,7 @@ impl Store {
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .map_err(err)?;
-        if version > 3 {
+        if version > 4 {
             return Err("This database needs a newer version of SleepLens.".into());
         }
         if version == 0 {
@@ -61,11 +61,14 @@ impl Store {
             store.migrate_v2()?;
         }
         if version < 3 {
-            store.migrate_v3_scores()?;
+            store.migrate_scores(3)?;
+        }
+        if version < 4 {
+            store.migrate_scores(4)?;
         }
         Ok(store)
     }
-    fn migrate_v3_scores(&mut self) -> AppResult<()> {
+    fn migrate_scores(&mut self, schema_version: u32) -> AppResult<()> {
         // Formula changes use the imported fields and stored estimates. They do
         // not invalidate stages or require the original card or waveform series.
         self.db()?.execute_batch("BEGIN;").map_err(err)?;
@@ -87,7 +90,7 @@ impl Store {
                 ).map_err(err)?;
                 }
                 self.db()?
-                    .execute_batch("PRAGMA user_version=3; COMMIT;")
+                    .execute_batch(&format!("PRAGMA user_version={schema_version}; COMMIT;"))
                     .map_err(err)
             })();
         if result.is_err() {
@@ -536,10 +539,16 @@ impl Store {
                 Some(&previous_to.format("%Y-%m-%d").to_string()),
             )?
         };
-        let nights = items
-            .iter()
-            .map(|n| self.cached_night(&n.date))
-            .collect::<AppResult<Vec<_>>>()?;
+        // Read at most one waveform at a time. A year of full 1 Hz series
+        // would otherwise stay in memory just to calculate pressure facts.
+        let mut nights = Vec::with_capacity(items.len());
+        let mut pressure_facts = Vec::with_capacity(items.len());
+        for item in &items {
+            let mut night = self.read_night(&item.date, true)?;
+            pressure_facts.push(sleeplens_core::pressure::night_pressure_facts(&night));
+            night.series = None;
+            nights.push(night);
+        }
         let stage_minutes: Vec<_> = nights
             .iter()
             .filter_map(|n| n.stages.as_ref().map(|s| &s.minutes))
@@ -551,6 +560,7 @@ impl Store {
                 light: stage_minutes.iter().map(|m| m.light).sum::<f32>() / count,
                 deep: stage_minutes.iter().map(|m| m.deep).sum::<f32>() / count,
                 rem: stage_minutes.iter().map(|m| m.rem).sum::<f32>() / count,
+                uncertain: stage_minutes.iter().map(|m| m.uncertain).sum::<f32>() / count,
             }
         });
         let valid_nights = items.iter().filter(|n| n.usage_minutes > 240.0).count();
@@ -585,6 +595,10 @@ impl Store {
             avg_excess_leak_p95: average(items.iter().map(|n| n.excess_leak_p95)),
             avg_pressure_p90: average(items.iter().map(|n| n.pressure_p90)),
             avg_stage_minutes,
+            pressure: sleeplens_core::pressure::pressure_summary_with_facts(
+                &nights,
+                &pressure_facts,
+            ),
             previous: PreviousPeriod {
                 avg_usage_minutes: average(
                     previous
@@ -626,8 +640,11 @@ impl Store {
             .take(6)
             .map(|n| self.cached_night(&n.date))
             .collect::<AppResult<Vec<_>>>()?;
+        let pressure_tips =
+            sleeplens_core::pressure::period_pressure_tips_with_facts(&nights, &pressure_facts);
         tip_nights.extend(nights);
-        summary.tips = sleeplens_core::tips::period_tips(&summary, &tip_nights);
+        summary.tips =
+            sleeplens_core::tips::period_tips_with_pressure(&summary, &tip_nights, pressure_tips);
         Ok(summary)
     }
     pub fn trends(&self, from: Option<&str>, to: Option<&str>) -> AppResult<Trends> {
@@ -831,7 +848,7 @@ fn encode_stages(stages: &SleepStageEstimate) -> AppResult<Vec<u8>> {
     metadata.stages.clear();
     let header = serde_json::to_vec(&metadata).map_err(err)?;
     let mut blob = Vec::with_capacity(9 + header.len() + stages.stages.len());
-    blob.push(1);
+    blob.push(2);
     blob.extend_from_slice(&(header.len() as u32).to_le_bytes());
     blob.extend_from_slice(&(stages.stages.len() as u32).to_le_bytes());
     blob.extend_from_slice(&header);
@@ -841,11 +858,12 @@ fn encode_stages(stages: &SleepStageEstimate) -> AppResult<Vec<u8>> {
         SleepStage::Deep => 2,
         SleepStage::Rem => 3,
         SleepStage::NoData => 4,
+        SleepStage::Uncertain => 5,
     }));
     Ok(blob)
 }
 fn decode_stages(blob: &[u8]) -> AppResult<SleepStageEstimate> {
-    if blob.len() < 9 || blob[0] != 1 {
+    if blob.len() < 9 || !matches!(blob[0], 1 | 2) {
         return Err("Unsupported stored stages version.".into());
     }
     let length = u32::from_le_bytes(blob[1..5].try_into().map_err(err)?) as usize;
@@ -857,8 +875,19 @@ fn decode_stages(blob: &[u8]) -> AppResult<SleepStageEstimate> {
     if blob.len() - header_end != count {
         return Err("Invalid stored stages length.".into());
     }
-    let mut estimate: SleepStageEstimate =
+    let mut metadata: serde_json::Value =
         serde_json::from_slice(&blob[9..header_end]).map_err(err)?;
+    // v1 blobs predate uncertainty and confidence. Preserve their original
+    // estimates until the card is re-read with estimator version 3.
+    if let Some(minutes) = metadata.get_mut("minutes").and_then(|v| v.as_object_mut()) {
+        minutes.entry("uncertain").or_insert(serde_json::json!(0.0));
+    }
+    if let Some(fields) = metadata.as_object_mut() {
+        fields.entry("confidence").or_insert(serde_json::json!({
+            "sleepWake": "moderate", "rem": "low", "deep": "veryLow"
+        }));
+    }
+    let mut estimate: SleepStageEstimate = serde_json::from_value(metadata).map_err(err)?;
     estimate.stages = blob[header_end..]
         .iter()
         .map(|stage| match stage {
@@ -867,6 +896,7 @@ fn decode_stages(blob: &[u8]) -> AppResult<SleepStageEstimate> {
             2 => Ok(SleepStage::Deep),
             3 => Ok(SleepStage::Rem),
             4 => Ok(SleepStage::NoData),
+            5 if blob[0] >= 2 => Ok(SleepStage::Uncertain),
             _ => Err("Invalid stored stage.".into()),
         })
         .collect::<AppResult<_>>()?;
@@ -887,21 +917,47 @@ mod tests {
                 SleepStage::Deep,
                 SleepStage::Rem,
                 SleepStage::NoData,
+                SleepStage::Uncertain,
             ],
             minutes: StageMinutes {
                 wake: 0.5,
                 light: 0.5,
                 deep: 0.5,
                 rem: 0.5,
+                uncertain: 0.5,
             },
+            confidence: Default::default(),
             signal_quality: 0.8,
             estimator_version: ESTIMATOR_VERSION,
         };
         let blob = encode_stages(&estimate).unwrap();
+        assert_eq!(blob[0], 2);
         let metadata_len = u32::from_le_bytes(blob[1..5].try_into().unwrap()) as usize;
         assert_eq!(blob.len(), 9 + metadata_len + estimate.stages.len());
-        assert_eq!(&blob[9 + metadata_len..], &[0, 1, 2, 3, 4]);
+        assert_eq!(&blob[9 + metadata_len..], &[0, 1, 2, 3, 4, 5]);
         assert_eq!(decode_stages(&blob).unwrap(), estimate);
+    }
+    #[test]
+    fn legacy_stage_blob_decodes_without_uncertainty_or_confidence() {
+        let header = serde_json::to_vec(&serde_json::json!({
+            "start": "2026-11-01T22:00:00", "epochSeconds": 30,
+            "stages": [], "minutes": {"wake": 0., "light": 0.5, "deep": 0., "rem": 0.},
+            "signalQuality": 0.8, "estimatorVersion": 2
+        }))
+        .unwrap();
+        let mut blob = vec![1];
+        blob.extend_from_slice(&(header.len() as u32).to_le_bytes());
+        blob.extend_from_slice(&1u32.to_le_bytes());
+        blob.extend_from_slice(&header);
+        blob.push(1);
+        let estimate = decode_stages(&blob).unwrap();
+        assert_eq!(estimate.stages, [SleepStage::Light]);
+        assert_eq!(estimate.minutes.uncertain, 0.);
+        assert_eq!(estimate.estimator_version, 2);
+        let json = serde_json::to_value(estimate).unwrap();
+        assert_eq!(json["confidence"]["sleepWake"], "moderate");
+        *blob.last_mut().unwrap() = 5;
+        assert!(decode_stages(&blob).is_err());
     }
     #[test]
     fn stage_blob_rejects_truncation_and_unknown_codes() {
@@ -912,6 +968,7 @@ mod tests {
             epoch_seconds: 30,
             stages: vec![SleepStage::Light],
             minutes: StageMinutes::default(),
+            confidence: Default::default(),
             signal_quality: 0.0,
             estimator_version: ESTIMATOR_VERSION,
         };

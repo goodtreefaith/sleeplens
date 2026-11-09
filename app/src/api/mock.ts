@@ -1,8 +1,9 @@
+import { pressureSummary, pressureTips } from "./mockPressure";
 import { nightTips } from "./mockV2";
 import { plural } from "../lib/format";
 import { addDays, daysInclusive } from "../lib/dates";
 import {
-  MOCK_DEVICE, MOCK_FIRST_DATE, mockMonths, mockNightDetail, mockNights, mockSettingsHistory, mockStageMinutes
+  MOCK_DEVICE, MOCK_FIRST_DATE, mockPressureObservation, mockMonths, mockNightDetail, mockNights, mockSettingsHistory, mockStageMinutes
 } from "./mockData";
 import type {
   AppInfo, CardCandidate, DateRange, ImportProgress, ImportResult, ImportStarted, NightListItem,
@@ -92,13 +93,13 @@ export function computePeriodSummary(
   const ns = all.filter(n => inRange(n.date, { from, to: end }) && n.usageMinutes > 0);
   const stages = ns.map(n => stageMinutes(n.date)).filter((v): v is StageMinutes => v != null);
   const avgStageMinutes = stages.length ? Object.fromEntries(
-    (["wake", "light", "deep", "rem"] as const).map(key => [key, mean(stages.map(s => s[key]))!])
+    (["wake", "light", "deep", "rem", "uncertain"] as const).map(key => [key, mean(stages.map(s => s[key]))!])
   ) as unknown as StageMinutes : null;
   const scored = ns.filter((n): n is NightListItem & { sleepScore: number } => n.sleepScore != null)
     .sort((a, b) => a.sleepScore - b.sleepScore || a.date.localeCompare(b.date));
   const night = (n: typeof scored[number] | undefined) => n ? { date: n.date, sleepScore: n.sleepScore } : null;
   const tips: Tip[] = [];
-  const add = (id: string, severity: Tip["severity"], title: string, body: string, learnSlug: string) => tips.push({ id, severity, title, body, learnSlug, evidence: id.startsWith("compliance") ? `${plural(current.validNights, "valid night")} out of ${rangeDays} calendar days` : id.startsWith("score-") ? `Average score ${Math.round(current.avgSleepScore ?? 0)}; previous ${Math.round(before.avgSleepScore ?? 0)}` : `${plural(ns.length, "night")} recorded in this period`, evidenceDates: ns.slice(-5).reverse().map(n => n.date) });
+  const add = (id: string, severity: Tip["severity"], title: string, body: string, learnSlug: string) => tips.push({ category: "therapy", id, severity, title, body, learnSlug, evidence: id.startsWith("compliance") ? `${plural(current.validNights, "valid night")} out of ${rangeDays} calendar days` : id.startsWith("score-") ? `Average score ${Math.round(current.avgSleepScore ?? 0)}; previous ${Math.round(before.avgSleepScore ?? 0)}` : `${plural(ns.length, "night")} recorded in this period`, evidenceDates: ns.slice(-5).reverse().map(n => n.date) });
   // Clinical and mask-fit tips keep their priority; the period-specific guides follow.
   for (const n of ns) for (const tip of nightTips(n, all.filter(p => p.date <= n.date).slice(-7))) {
     if (tip.id === "ahi-watch" && current.avgAhi != null && current.avgAhi <= 5 && ns.filter(n => (n.ahi ?? 0) > 5).length < 3) continue;
@@ -137,8 +138,11 @@ export function computePeriodSummary(
     tip.evidenceDates = changedDates.slice(0, 5);
   }
   if (!tips.length) add("all-good", "good", "Keep your routine going", "Your recorded therapy measures look steady. Keep using your mask whenever you sleep.", "sleepScore");
+  const observations = ns.flatMap(n => { const observation = mockPressureObservation(n.date); return observation ? [{ ...observation, item: n }] : []; });
+  const pressureObservations = pressureTips(observations, true);
   const byDate = new Map(ns.map(n => [n.date, n]));
   return {
+    pressure: pressureSummary(observations),
     period, from, to: end, clampedToFirstNight, headline: current.nights ? `You used therapy on ${current.nights} of ${rangeDays} nights${current.avgAhi == null ? "." : `, with an average of ${current.avgAhi.toFixed(1)} breathing events per hour.`}` : "No therapy nights were recorded in this period.", daysInRange: rangeDays, nights: current.nights, validNights: current.validNights,
     compliancePct: current.compliancePct, avgUsageMinutes: current.nights ? current.avgUsageMinutes : null,
     avgAhi: current.avgAhi, avgSleepScore: current.avgSleepScore, avgExcessLeakP95: current.avgExcessLeakP95,
@@ -150,7 +154,7 @@ export function computePeriodSummary(
       const date = addDays(from, i), n = byDate.get(date);
       return { date, sleepScore: n?.sleepScore ?? null, usageMinutes: n?.usageMinutes ?? 0 };
     }),
-    tips: tips.sort((a, b) => ["talk", "watch", "info", "good"].indexOf(a.severity) - ["talk", "watch", "info", "good"].indexOf(b.severity)).slice(0, 5)
+    tips: [...tips.sort((a, b) => ["talk", "watch", "info", "good"].indexOf(a.severity) - ["talk", "watch", "info", "good"].indexOf(b.severity)).slice(0, Math.max(0, 5 - pressureObservations.length)), ...pressureObservations].sort((a, b) => ["talk", "watch", "info", "good"].indexOf(a.severity) - ["talk", "watch", "info", "good"].indexOf(b.severity)).slice(0, 5)
   };
 }
 

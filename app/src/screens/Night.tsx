@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import type { NightDetail, TherapyEvent } from "../api/types";
 import type { Go } from "../App";
-import { NightCharts, type Zoom } from "../charts/NightCharts";
+import { NightCharts, eventAtMinimum, type Zoom } from "../charts/NightCharts";
 import { DateStepper } from "../components/DateStepper";
 import { EVENT_STYLE, Icon, type MarkerKind, Swatch } from "../components/Icon";
 import { HelpTip } from "../components/HelpTip";
 import { StageSummary } from "../components/SleepStages";
+import { PressureInsights } from "../components/PressureInsights";
 import { ScoreBadge } from "../components/SleepQuality";
 import "../night-trends-v2.css";
 import { SourceTag } from "../components/Status";
@@ -21,6 +22,16 @@ export function NightScreen({ date, go, theme }: { date?: string; go: Go; theme:
   const [err, setErr] = useState<string | null>(null);
   const [zoom, setZoom] = useState<Zoom | null>(null);
   const [sel, setSel] = useState<number | null>(null);
+  const [wide, setWide] = useState(() => typeof matchMedia !== "undefined" && matchMedia("(min-width: 1600px)").matches);
+
+  useEffect(() => {
+    if (typeof matchMedia === "undefined") return;
+    const query = matchMedia("(min-width: 1600px)");
+    const update = () => setWide(query.matches);
+    query.addEventListener("change", update);
+    update();
+    return () => query.removeEventListener("change", update);
+  }, []);
   const chartCard = useRef<HTMLElement>(null);
   const has = !!d && nights.some((n) => n.date === d);
 
@@ -36,48 +47,13 @@ export function NightScreen({ date, go, theme }: { date?: string; go: Go; theme:
   const unit = detail?.settings?.pressureUnit ?? info?.device?.pressureUnit ?? "unknown";
   const u = unitLabel(unit);
 
-  return (
-    <section aria-labelledby="h-night">
-      <div className="screen-h">
-        <h1 id="h-night" className="sr">Night detail</h1>
-        <DateStepper nights={nights} date={d} onDate={(nd) => go({ screen: "night", date: nd })} />
-        {detail ? <ScoreBadge score={detail.score} go={go} /> : null}
-      </div>
-      {!has ? (
-        <div className="card placeholder"><Icon name="moon" /><h2>No therapy recorded on {longDate(d)}</h2><p>Pick another night with the arrows above.</p></div>
-      ) : err ? (
-        <p className="error-box" role="alert">Could not load this night: {err}</p>
-      ) : !detail ? (
-        <div className="card loading" role="status">Loading the night…</div>
-      ) : (
-        <div className="with-aside">
-          <div className="stack">
-            <Sessions detail={detail} />
-            <section className="card" aria-labelledby="h-charts" ref={chartCard}>
-              <HelpTip term="nightCharts" variant="info" />
-              <div className="card-h"><h2 id="h-charts">Through the night</h2><p>One reading per second. Gaps are times the mask was off.</p></div>
-              {detail.series ? (
-                <NightCharts detail={detail} unit={unit} theme={theme} zoom={zoom} onZoom={setZoom} />
-              ) : (
-                <p className="quiet">The detailed recording for this night was not copied from the card. The summary on the right still applies.</p>
-              )}
-            </section>
-          </div>
-          <aside className="aside" aria-label="Night summary and events">
-            <EventList detail={detail} sel={sel} onPick={(i, e) => {
-              setSel(i);
-              const t = wallSeconds(e.time);
-              setZoom({ min: t - 240, max: t + 240 });
-              // When the side panel sits below the charts (narrow window), bring the charts into view.
-              const r = chartCard.current?.getBoundingClientRect();
-              if (r && (r.bottom < 60 || r.top > window.innerHeight - 120)) chartCard.current?.scrollIntoView({ block: "start" });
-            }} />
-            <section className="card" aria-labelledby="h-stage-summary">
+  const pressureCard = detail ? <PressureInsights tips={detail.tips} unit={unit} go={go} /> : null;
+  const stageCard = detail ? <section className="card" aria-labelledby="h-stage-summary">
               <HelpTip term="sleepStages" variant="info" />
               <h2 id="h-stage-summary">Estimated sleep stages</h2>
               <StageSummary minutes={detail.stages?.minutes ?? null} stages={detail.stages} go={go} />
-            </section>
-            <section className="card" aria-labelledby="h-sum">
+            </section> : null;
+  const machineCard = detail ? <section className="card" aria-labelledby="h-sum">
               <HelpTip term="machineSummary" variant="info" />
               <div className="card-h"><h2 id="h-sum">Machine summary</h2></div>
               <dl className="kv">
@@ -97,8 +73,8 @@ export function NightScreen({ date, go, theme }: { date?: string; go: Go; theme:
                 <dt>High pressure (90%) <HelpTip term="pressureP90" /></dt><dd>{r1(detail.pressureP90)} {u}</dd>
               </dl>
               {detail.pressureSource === "computed" ? <p style={{ marginTop: 12 }}><SourceTag computed /> <span className="quiet">Pressure values</span></p> : null}
-            </section>
-            {detail.settings ? (
+            </section> : null;
+  const settingsCard = detail?.settings ? (
               <section className="card" aria-labelledby="h-set">
               <HelpTip term="nightSettings" variant="info" />
                 <div className="card-h"><h2 id="h-set">Settings this night</h2>{detail.settingsChanged ? <span className="status watch"><Icon name="sliders" />Changed</span> : null}</div>
@@ -111,7 +87,49 @@ export function NightScreen({ date, go, theme }: { date?: string; go: Go; theme:
                   <dt>Comfort <HelpTip term="comfort" /></dt><dd>Level {detail.settings.comfortLevel}</dd>
                 </dl>
               </section>
-            ) : null}
+            ) : null;
+
+  return (
+    <section aria-labelledby="h-night">
+      <div className="screen-h">
+        <h1 id="h-night" className="sr">Night detail</h1>
+        <DateStepper nights={nights} date={d} onDate={(nd) => go({ screen: "night", date: nd })} />
+        {detail ? <ScoreBadge score={detail.score} go={go} /> : null}
+      </div>
+      {!has ? (
+        <div className="card placeholder"><Icon name="moon" /><h2>No therapy recorded on {longDate(d)}</h2><p>Pick another night with the arrows above.</p></div>
+      ) : err ? (
+        <p className="error-box" role="alert">Could not load this night: {err}</p>
+      ) : !detail ? (
+        <div className="card loading" role="status">Loading the night…</div>
+      ) : (
+        <div className="night-detail-layout">
+          <div className="stack night-chart-column">
+            <Sessions detail={detail} />
+            <section className="card" aria-labelledby="h-charts" ref={chartCard}>
+              <HelpTip term="nightCharts" variant="info" />
+              <div className="card-h"><h2 id="h-charts">Through the night</h2><p>One reading per second. Gaps are times the mask was off.</p></div>
+              {detail.series ? (
+                <NightCharts detail={detail} unit={unit} theme={theme} zoom={zoom} onZoom={setZoom} />
+              ) : (
+                <p className="quiet">The detailed recording for this night was not copied from the card. The summary on the right still applies.</p>
+              )}
+            </section>
+            <div className="night-detail-pair">
+              {wide ? <>{machineCard}{settingsCard}</> : <>{pressureCard}{stageCard}</>}
+            </div>
+          </div>
+          <aside className="aside night-detail-rail" aria-label="Night summary and events">
+            {wide ? pressureCard : null}
+            <EventList detail={detail} sel={sel} onPick={(i, e) => {
+              setSel(i);
+              const t = wallSeconds(e.time);
+              setZoom({ min: t - 240, max: t + 240 });
+              // When the side panel sits below the charts (narrow window), bring the charts into view.
+              const r = chartCard.current?.getBoundingClientRect();
+              if (r && (r.bottom < 60 || r.top > window.innerHeight - 120)) chartCard.current?.scrollIntoView({ block: "start" });
+            }} />
+            {wide ? stageCard : <>{machineCard}{settingsCard}</>}
           </aside>
         </div>
       )}
@@ -171,14 +189,17 @@ function EventList({ detail, sel, onPick }: { detail: NightDetail; sel: number |
       ) : null}
       {list.length ? (
         <>
-          <div className="evscroll">
+          <div className="evscroll" role="region" aria-label="Night event list" tabIndex={0}>
             <div className="evcounts" role="list">
               {list.map(({ e, i }) => {
                 const k = e.kind as MarkerKind;
+                const atMinimum = eventAtMinimum(e, detail.settings?.minPressure);
+                const duration = `${e.value} ${k === "largeLeak" ? "min" : "s"}`;
+                const description = `${SHORT_LABEL[k]} · ${duration}${atMinimum ? " · at minimum pressure" : ""} · ${clock(e.time)}. ${DEFINITION[k]}`;
                 return (
-                  <div key={i} className="event-help-row" role="listitem"><button type="button" aria-pressed={sel === i} title={DEFINITION[k]} onClick={() => onPick(i, e)}>
+                  <div key={i} className="event-help-row" role="listitem"><button type="button" aria-pressed={sel === i} title={description} onClick={() => onPick(i, e)}>
                     <Swatch kind={k} />
-                    <span className="ev-name">{SHORT_LABEL[k]} · {e.value} {k === "largeLeak" ? "min" : "s"}</span>
+                    <span className="ev-name"><span className="ev-label">{SHORT_LABEL[k]} <span className="ev-duration">· {duration}</span></span>{atMinimum ? <small className="ev-minimum">At minimum</small> : null}</span>
                     <span className="t">{clock(e.time)}</span>
                   </button></div>
                 );

@@ -10,10 +10,10 @@ export function ScoreBadge({ score, go }: { score: SleepScore | null; go?: Go })
   const status = !score ? "none" : score.total >= 70 ? "good" : score.total >= 50 ? "watch" : "talk";
   return <div className={`score-badge ${status}`}><Icon name={status} /><b>{score ? `${score.total}/100 · ${score.label}` : "Score unavailable"}</b><span className="estimated-tag">Estimated</span><HelpTip term="sleepScore" go={go} /></div>;
 }
-const COMPONENT_HELP: Record<string, string> = { duration: "hours", breathing: "ahi", maskSeal: "excessLeak", continuity: "interruptions", sleepStages: "sleepStages" };
+const COMPONENT_HELP: Record<string, string> = { duration: "hours", breathing: "ahi", maskSeal: "excessLeak", continuity: "interruptions", sleepStages: "remSleepScore" };
 export function ScoreBreakdown({ score, go }: { score: SleepScore | null; go?: Go }) {
   return <section className="card score-breakdown"><HelpTip term="sleepScore" go={go} variant="info" /><h2>Score breakdown <HelpTip term="sleepScore" go={go} /></h2>
-    {!score ? <p className="quiet">A full score needs at least 30 minutes of use and recorded measurements. Re-read the card if night details are missing.</p> : <><p className="quiet">Points reflect this night's available data. Missing components are excluded and the total is scaled to 100.</p><ul>{scoreBreakdown(score).map((c) => <li key={c.key}><div><b>{c.key === "sleepStages" ? "Sleep stages · estimated (10 points)" : c.label} <HelpTip term={COMPONENT_HELP[c.key] ?? "sleepScore"} go={go} /></b><span>{Math.round(c.points * 10) / 10} / {c.maxPoints}</span></div><div className="score-bar" role="meter" aria-label={c.label} aria-valuenow={c.points} aria-valuemin={0} aria-valuemax={c.maxPoints}><span style={{ width: `${c.percent}%` }} /></div><p>{c.detail}</p></li>)}</ul></>}
+    {!score ? <p className="quiet">A full score needs at least 30 minutes of use and recorded measurements. Re-read the card if night details are missing.</p> : <><p className="quiet">Points reflect this night's available data. Missing components are excluded and the total is scaled to 100.</p><ul>{scoreBreakdown(score).map((c) => <li key={c.key}><div><b>{c.key === "sleepStages" ? "REM sleep (estimated, low confidence)" : c.label} <HelpTip term={COMPONENT_HELP[c.key] ?? "sleepScore"} go={go} /></b><span>{Math.round(c.points * 10) / 10} / {c.maxPoints}</span></div><div className="score-bar" role="meter" aria-label={c.label} aria-valuenow={c.points} aria-valuemin={0} aria-valuemax={c.maxPoints}><span style={{ width: `${c.percent}%` }} /></div><p>{c.detail}</p></li>)}</ul></>}
   </section>;
 }
 export function ScoreCard({ score, go, summary, onContributor }: { score: SleepScore | null; go: Go; summary: string; onContributor?: (key: ScoreComponentKey) => void }) {
@@ -35,11 +35,11 @@ export function ScoreCard({ score, go, summary, onContributor }: { score: SleepS
       const component = segment.component;
       const status = component ? contributorStatus(component.points, component.maxPoints) : "No data";
       const meter = !component ? 0 : segment.share >= .9 ? 3 : segment.share >= .45 ? 2 : 1;
-      return <li key={segment.key}><button type="button" className="score-contributor" onClick={() => onContributor ? onContributor(segment.key) : go({ screen: "learn", term: COMPONENT_HELP[segment.key]! })}>
+      return <li key={segment.key} className={segment.key === "sleepStages" ? "score-rem-row" : undefined}><button type="button" className="score-contributor" onClick={() => onContributor ? onContributor(segment.key) : go({ screen: "learn", term: COMPONENT_HELP[segment.key]! })}>
         <span className="score-contributor-heading"><span className="score-component-dot" style={{ background: segment.color }} /><strong>{segment.label}</strong><span className="score-contributor-points">{component ? `${Math.round(component.points * 10) / 10} / ${component.maxPoints}` : `– / ${segment.maxPoints}`}</span></span>
         <span className="score-contributor-reading"><span className="score-three-step" aria-hidden="true">{[1, 2, 3].map(step => <i key={step} data-filled={step <= meter} style={step <= meter ? { background: segment.color, borderColor: segment.color } : undefined} />)}</span><span className="score-contributor-status">{status}</span><Icon name="chev" /></span>
         <span className="score-contributor-detail">{component?.detail ?? "Not recorded. This part is excluded from the total."}</span>
-      </button></li>;
+      </button>{segment.key === "sleepStages" ? <span className="score-rem-help"><HelpTip term="remSleepScore" go={go} /></span> : null}</li>;
     })}</ul>
     <p className="score-meter-legend"><span className="score-three-step" aria-hidden="true"><i /><i /><i /></span>Meter: Poor / Sufficient / Optimal</p>
     <p className="quiet score-missing-note">Missing parts are excluded; available points are scaled to 100.</p>

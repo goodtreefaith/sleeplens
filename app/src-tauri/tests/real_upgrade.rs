@@ -39,17 +39,21 @@ fn report(s: &Store, label: &str) {
     }
     if let Some(st) = &d.stages {
         println!(
-            "    stages v{} wake {:.0} light {:.0} deep {:.0} rem {:.0} min, quality {:.2}",
+            "    stages v{} wake {:.0} light {:.0} deep {:.0} rem {:.0} uncertain {:.0} min, quality {:.2}",
             st.estimator_version,
             st.minutes.wake,
             st.minutes.light,
             st.minutes.deep,
             st.minutes.rem,
+            st.minutes.uncertain,
             st.signal_quality
         );
     }
     for t in &d.tips {
-        println!("    tip [{}] {}: {}", t.severity, t.title, t.body);
+        println!(
+            "    tip [{}/{}] {}: {} | evidence {:?} dates {:?}",
+            t.category, t.severity, t.title, t.body, t.evidence, t.evidence_dates
+        );
     }
     for period in ["week", "month", "6months", "year"] {
         let p = s.period_summary(period, None).unwrap();
@@ -66,6 +70,13 @@ fn report(s: &Store, label: &str) {
             p.worst_night.as_ref().map(|n| (n.date.clone(), n.sleep_score)),
             p.tips.iter().map(|t| t.id.clone()).collect::<Vec<_>>()
         );
+        println!("    pressure {:?}", p.pressure);
+        for tip in p.tips.iter().filter(|t| t.category == "pressure") {
+            println!(
+                "    pressure tip [{}] {}: {} | evidence {:?} dates {:?}",
+                tip.severity, tip.title, tip.body, tip.evidence, tip.evidence_dates
+            );
+        }
     }
 }
 

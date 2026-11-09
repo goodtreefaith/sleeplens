@@ -23,3 +23,19 @@ it("indexes every glossary entry once in the grouped Learn sections", () => {
   expect(keys.slice().sort()).toEqual(GLOSSARY.map(entry => entry.id).sort());
   expect(new Set(keys).size).toBe(keys.length);
 });
+
+it("explains v2.2 stage uncertainty and pressure concepts in the appropriate Learn groups", () => {
+  const sleep = GLOSSARY_GROUPS.find(group => group.id === "sleep")!.keys;
+  const settings = GLOSSARY_GROUPS.find(group => group.id === "settings")!.keys;
+  ["uncertainStage", "nonRemSleep", "stageAccuracy"].forEach(key => expect(sleep).toContain(key));
+  ["pressureInsights", "pressureP90", "pressureRange"].forEach(key => expect(settings).toContain(key));
+  expect(GLOSSARY_GROUPS.find(group => group.id === "breathing")!.keys).toContain("treatmentEmergentCentralApnea");
+  ["uncertainStage", "nonRemSleep", "stageAccuracy", "pressureInsights", "pressureP90", "pressureRange", "treatmentEmergentCentralApnea"].forEach(key => {
+    const body = glossaryEntry(key)!.body.join(" ");
+    const sentences = body.match(/[.!?](?:\s|$)/g) ?? [];
+    expect(sentences.length).toBeGreaterThanOrEqual(2);
+    expect(sentences.length).toBeLessThanOrEqual(3);
+  });
+  ["sleepWakeConfidence", "remConfidence", "deepConfidence"].forEach(key => expect(glossaryEntry(key)!.body[0]).toMatch(/^Studies comparing breathing-only estimates with sleep-lab tests find/));
+  expect(glossaryEntry("remSleepScore")!.body.join(" ")).toContain("Deep sleep is not scored");
+});

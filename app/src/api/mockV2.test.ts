@@ -10,7 +10,7 @@ const night = (changes: Partial<NightListItem> = {}): NightListItem => ({
 });
 const stages: SleepStageEstimate = {
   start: "2026-11-01T22:00:00", epochSeconds: 30, stages: [],
-  minutes: { wake: 0, light: 200, deep: 100, rem: 120 }, signalQuality: 0.9, estimatorVersion: 1
+  minutes: { wake: 0, light: 200, deep: 100, rem: 120, uncertain: 0 }, signalQuality: 0.9, confidence: { sleepWake: "moderate", rem: "low", deep: "veryLow" }, estimatorVersion: 3
 };
 
 describe("synthetic score follows the contract", () => {
@@ -54,4 +54,15 @@ it("rescales unrounded points and preserves original component weights", () => {
   expect(score.components.reduce((sum, component) => sum + component.points, 0)).toBeCloseTo(93.4);
   const missing = computeMockScore(night({ ahi: null }), null)!;
   expect(missing.components.map(c => c.maxPoints)).toEqual([30, 15, 15]);
+});
+
+it("scores only REM and omits stages when uncertainty exceeds 40 percent", () => {
+  const withMinutes = (minutes: SleepStageEstimate["minutes"]): SleepStageEstimate => ({ ...stages, minutes });
+  const component = (estimate: SleepStageEstimate) => computeMockScore(night(), estimate)!.components.find(c => c.key === "sleepStages");
+  expect(component(withMinutes({ wake: 0, light: 300, deep: 0, rem: 30, uncertain: 0 }))?.points).toBeCloseTo(4.5);
+  expect(component(withMinutes({ wake: 0, light: 0, deep: 300, rem: 30, uncertain: 0 }))?.points).toBeCloseTo(4.5);
+  expect(component(withMinutes({ wake: 120, light: 120, deep: 0, rem: 30, uncertain: 150 }))?.points).toBe(10);
+  expect(component(stages)?.label).toBe("REM sleep (estimated, low confidence)");
+  expect(component(withMinutes({ ...stages.minutes, uncertain: 168 }))).toBeDefined();
+  expect(component(withMinutes({ ...stages.minutes, uncertain: 169 }))).toBeUndefined();
 });

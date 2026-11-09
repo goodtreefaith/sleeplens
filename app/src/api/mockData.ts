@@ -1,5 +1,6 @@
 // Synthetic data for a fictional Aeonmed AS100A. Deterministic (seeded), so screenshots and tests are stable.
 // Nothing here comes from a real card.
+import { pressureTips, type PressureObservation } from "./mockPressure";
 import { computeMockScore, estimateMockStages, nightTips } from "./mockV2";
 import { addDays, daysInclusive, secondsToWall, wallSeconds } from "../lib/dates";
 import type {
@@ -62,6 +63,8 @@ interface NightPlan {
   settings: Settings;
   score: SleepScore | null;
   stages: SleepStageEstimate;
+  therapyEvents: TherapyEvent[];
+  leakBlocks: [number, number][];
 }
 
 function planNight(index: number): NightPlan | null {
@@ -86,15 +89,16 @@ function planNight(index: number): NightPlan | null {
   }
 
   const hours = usage / 60;
-  const ahiTarget = clamp(2.3 + (r() - 0.5) * 3.4 + (LEAK_NIGHTS.has(index) ? 5 : 0), 0.3, 9);
+  const ceilingWeek = index >= 100 && index <= 106;
+  const ahiTarget = clamp(2.3 + (r() - 0.5) * 3.4 + (LEAK_NIGHTS.has(index) || ceilingWeek || index === 62 ? 5 : 0), 0.3, 9);
   const total = Math.max(Math.ceil(0.3 * hours), Math.round(ahiTarget * hours));
   const obstructive = Math.round(total * (0.35 + r() * 0.2));
-  const central = Math.round((total - obstructive) * (0.25 + r() * 0.2));
-  const counts: EventCounts = { obstructive, central, hypopnea: total - obstructive - central };
+  const central = index === 62 ? Math.round(total * 0.65) : Math.round((total - obstructive) * (0.25 + r() * 0.2));
+  const counts: EventCounts = { obstructive: Math.min(obstructive, total - central), central, hypopnea: Math.max(0, total - Math.min(obstructive, total - central) - central) };
   const hasAhi = index >= NO_AHI_BEFORE;
 
-  const p90 = round1(clamp(settings.minPressure + 1.2 + r() * 2.4, settings.minPressure + 1, settings.maxPressure));
-  const pMean = round1(clamp(settings.minPressure + 0.4 + r() * 1.1, settings.minPressure, p90 - 0.3));
+  const p90 = ceilingWeek || index === 60 || LEAK_NIGHTS.has(index) ? settings.maxPressure - 0.2 : (index >= 50 && index <= 56 || index >= 80 && index <= 82) ? settings.minPressure + 0.3 : round1(clamp(settings.minPressure + 1.2 + r() * 1.8, settings.minPressure + 1, settings.maxPressure - 0.7));
+  const pMean = round1(p90 - 0.15 - r() * 0.1);
   const leakNight = LEAK_NIGHTS.has(index);
 
   const item: NightListItem = {
@@ -115,10 +119,19 @@ function planNight(index: number): NightPlan | null {
     eventCounts: hasAhi ? counts : { obstructive: 0, central: 0, hypopnea: 0 },
     settingsChanged: index === SETTINGS_CHANGE_INDEX
   };
-  const stages = estimateMockStages(item, sessions, index);
+  const therapyEvents: TherapyEvent[] = [];
+  const onOffsets = sessions.flatMap(session => Array.from({ length: session.minutes * 2 }, (_, i) => wallSeconds(session.start) - t0 + i * 30));
+  for (const [kind, count, code] of [["obstructiveApnea", item.eventCounts.obstructive, 0xe1], ["centralApnea", item.eventCounts.central, 0xe2], ["hypopnea", item.eventCounts.hypopnea, 0xe3]] as const) {
+    for (let j = 0; j < count; j++) {
+      const at = onOffsets[Math.floor(r() * onOffsets.length)] ?? 0;
+      therapyEvents.push({ time: secondsToWall(t0 + at), kind, code, value: 12 + Math.round(r() * 18), pressure: null });
+    }
+  }
+  const leakBlocks: [number, number][] = leakNight ? [[onOffsets[Math.floor(onOffsets.length * 0.45)] ?? 0, (onOffsets[Math.floor(onOffsets.length * 0.45)] ?? 0) + (item.largeLeakMinutes ?? 20) * 60]] : [];
+  const stages = estimateMockStages(item, sessions, index, therapyEvents, leakBlocks);
   const score = computeMockScore(item, stages);
   item.sleepScore = score?.total ?? null;
-  return { item, index, sessions, settings, stages, score };
+  return { item, index, sessions, settings, stages, score, therapyEvents, leakBlocks };
 }
 
 let plansCache: NightPlan[] | null = null;
@@ -176,30 +189,13 @@ export function mockNightDetail(date: string): NightDetail | null {
     const a = Math.round(wallSeconds(s.start) - t0), b = Math.round(wallSeconds(s.end) - t0);
     for (let i = a; i <= b && i < n; i++) on[i] = 1;
   }
-  const onIdx: number[] = [];
-  for (let i = 0; i < n; i += 30) if (on[i]) onIdx.push(i);
-  const pickOn = () => onIdx[Math.floor(r() * onIdx.length)] ?? 0;
-
   // Events, consistent with the counts.
   type Ev = { at: number; kind: TherapyEvent["kind"]; code: number; dur: number };
   const evs: Ev[] = [];
   const c = item.ahi == null ? { obstructive: 0, central: 0, hypopnea: 0 } : item.eventCounts;
-  for (let k = 0; k < c.obstructive; k++) evs.push({ at: pickOn(), kind: "obstructiveApnea", code: 0xe1, dur: 10 + Math.round(r() * 22) });
-  for (let k = 0; k < c.central; k++) evs.push({ at: pickOn(), kind: "centralApnea", code: 0xe2, dur: 10 + Math.round(r() * 14) });
-  for (let k = 0; k < c.hypopnea; k++) evs.push({ at: pickOn(), kind: "hypopnea", code: 0xe3, dur: 12 + Math.round(r() * 25) });
-
-  // Large-leak blocks on leak nights.
-  const leakBlocks: [number, number][] = [];
-  if (item.largeLeakMinutes && item.largeLeakMinutes > 10) {
-    let left = item.largeLeakMinutes * 60;
-    while (left > 0) {
-      const len = Math.min(left, 300 + Math.round(r() * 900));
-      const a = pickOn();
-      leakBlocks.push([a, Math.min(n - 1, a + len)]);
-      evs.push({ at: a, kind: "largeLeak", code: 0xee, dur: Math.round(len / 60) });
-      left -= len;
-    }
-  }
+  for (const event of plan.therapyEvents) evs.push({ at: wallSeconds(event.time) - t0, kind: event.kind, code: event.code, dur: event.value });
+  const leakBlocks = plan.leakBlocks;
+  for (const [a, b] of leakBlocks) evs.push({ at: a, kind: "largeLeak", code: 0xee, dur: Math.round((b - a) / 60) });
   evs.sort((a, b) => a.at - b.at);
 
   // Series.
@@ -207,27 +203,18 @@ export function mockNightDetail(date: string): NightDetail | null {
   const excess = new Float32Array(n);
   const flow = new Float32Array(n);
   const snore = new Float32Array(n);
-  const boost = new Float32Array(n);
   const flowDip = new Float32Array(n).fill(1);
   for (const e of evs) {
-    if (e.kind === "obstructiveApnea" || e.kind === "hypopnea") {
-      for (let i = e.at; i < Math.min(n, e.at + 900); i++) boost[i] = Math.max(boost[i]!, (e.kind === "obstructiveApnea" ? 1.2 : 0.6) * Math.exp(-(i - e.at) / 300));
-    }
     if (e.kind === "obstructiveApnea" || e.kind === "centralApnea" || e.kind === "hypopnea") {
       const depth = e.kind === "hypopnea" ? 0.45 : 0.08;
       for (let i = Math.max(0, e.at - e.dur); i < e.at && i < n; i++) flowDip[i] = depth;
     }
   }
-  const rampEnd = settings.rampMinutes * 60;
-  let drift = 0, leakNoise = 0, flowBase = 28;
-  const target = item.pressureMean ?? settings.minPressure + 1;
+  let leakNoise = 0, flowBase = 28;
   const pressureEvents: Ev[] = [];
   let lastLevel = -1;
   for (let i = 0; i < n; i++) {
-    drift += (r() - 0.5) * 0.04 - drift * 0.002;
-    const ramp = i < rampEnd ? i / rampEnd : 1;
-    const base = settings.startPressure + (target - settings.startPressure) * ramp;
-    const p = clamp(base + drift * 3 + boost[i]! * 2.2, settings.minPressure, settings.maxPressure);
+    const p = mockPressureAt(plan, i);
     pressure[i] = p;
     const level = Math.round(p);
     if (on[i] && level !== lastLevel && i % 60 === 0) {
@@ -267,7 +254,7 @@ export function mockNightDetail(date: string): NightDetail | null {
     ...item,
     score: plan.score,
     stages: plan.stages,
-    tips: nightTips(item, mockNights().filter(n => n.date <= date && n.date >= addDays(date, -6)), plan.index === SETTINGS_CHANGE_INDEX),
+    tips: [...nightTips(item, mockNights().filter(n => n.date <= date && n.date >= addDays(date, -6)), plan.index === SETTINGS_CHANGE_INDEX).slice(0, 2), ...pressureTips([mockPressureObservation(date)!])].sort((a, b) => ["talk", "watch", "info", "good"].indexOf(a.severity) - ["talk", "watch", "info", "good"].indexOf(b.severity)).slice(0, 4),
     sessions,
     summary: item.ahi == null
       ? { startPressure: null, maxPressure: null, ai: null, cai: null, oai: null, hi: null, sni: null }
@@ -297,4 +284,32 @@ export function mockNightDetail(date: string): NightDetail | null {
 
 export function mockDaysBetween(a: string, b: string): number {
   return daysInclusive(a, b);
+}
+
+function mockPressureAt(plan: NightPlan, second: number): number {
+  const { index, settings } = plan;
+  if ((index >= 100 && index <= 106 || index === 60) && second % 3600 >= 1200) return settings.maxPressure - 0.1;
+  if (LEAK_NIGHTS.has(index) && plan.leakBlocks.some(([a, b]) => second >= a && second <= b)) return settings.maxPressure - 0.2;
+  if (index >= 50 && index <= 56) return settings.minPressure + 0.2;
+  if (index >= 80 && index <= 82) return settings.minPressure + 0.2;
+  const ramp = Math.min(1, second / (settings.rampMinutes * 60));
+  const target = plan.item.pressureMean ?? settings.minPressure;
+  const amplitude = Math.max(0.1, ((plan.item.pressureP90 ?? target) - target) / 0.95);
+  const p = settings.startPressure + (target - settings.startPressure) * ramp + Math.sin(second / 600) * amplitude * ramp;
+  return round1(clamp(p, settings.minPressure, settings.maxPressure));
+}
+export function mockPressureObservation(date: string): PressureObservation | null {
+  const plan = plans().find(p => p.item.date === date);
+  if (!plan) return null;
+  // Count against the same generated pressure values used by the 1 Hz chart.
+  const eventsAtMin = plan.therapyEvents.filter(e => ["obstructiveApnea", "hypopnea"].includes(e.kind) && mockPressureAt(plan, wallSeconds(e.time) - wallSeconds(plan.item.start!)) - plan.settings.minPressure <= 0.5).length;
+  let atMax = 0, used = 0;
+  const start = wallSeconds(plan.item.start!);
+  for (const session of plan.sessions) for (let t = wallSeconds(session.start); t < wallSeconds(session.end); t++) {
+    const offset = t - start;
+    const p = mockPressureAt(plan, offset);
+    used++;
+    if (plan.settings.maxPressure - p <= 0.5) atMax++;
+  }
+  return { item: plan.item, settings: plan.settings, shareAtMaxPct: used ? atMax / used * 100 : 0, eventsAtMin };
 }

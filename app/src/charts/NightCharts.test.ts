@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stageRuns, nightHypnogramScale, NIGHT_CHART_AXIS_WIDTH, NIGHT_CHART_PADDING } from "./NightCharts";
+import { stageRuns, nightHypnogramScale, NIGHT_CHART_AXIS_WIDTH, NIGHT_CHART_PADDING, minimumPressureMarkerPath } from "./NightCharts";
 
 describe("hypnogram runs", () => {
   it("keeps gaps and stage transitions at their original epoch boundaries", () => {
@@ -20,4 +20,24 @@ describe("Night chart alignment", () => {
     expect(NIGHT_CHART_AXIS_WIDTH).toBe(84);
     expect(NIGHT_CHART_PADDING).toEqual([8, 12, 0, 0]);
   });
+});
+
+import { eventAtMinimum, pressureSettingBounds } from "./NightCharts";
+import type { Settings, TherapyEvent } from "../api/types";
+
+it("marks only known obstructive/hypopnea pressures within the minimum tolerance", () => {
+  const event: TherapyEvent = { time: "2026-11-08T23:00:00", kind: "obstructiveApnea", value: 12, pressure: 5.5, code: 1 };
+  expect(eventAtMinimum(event, 5)).toBe(true);
+  expect(eventAtMinimum({ ...event, kind: "hypopnea", pressure: 4.7 }, 5)).toBe(true);
+  expect(eventAtMinimum({ ...event, pressure: 5.51 }, 5)).toBe(false);
+  expect(eventAtMinimum({ ...event, kind: "centralApnea" }, 5)).toBe(false);
+  expect(eventAtMinimum({ ...event, pressure: null }, 5)).toBe(false);
+  expect(eventAtMinimum(event, undefined)).toBe(false);
+  expect(pressureSettingBounds({ settings: { minPressure: 5, maxPressure: 9 } as Settings })).toEqual([5, 9]);
+  expect(pressureSettingBounds({ settings: { minPressure: 7, maxPressure: 7 } as Settings })).toEqual([7]);
+  expect(pressureSettingBounds({ settings: null })).toEqual([]);
+});
+
+it("uses an open downward caret for minimum-pressure events", () => {
+  expect(minimumPressureMarkerPath(9, 7, 6)).toBe("M3 4L9 10L15 4");
 });

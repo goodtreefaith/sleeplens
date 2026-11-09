@@ -17,3 +17,21 @@ describe("period chart axes", () => {
     expect(html).not.toContain('>40</text>');
   });
 });
+
+describe("period chart stage modes", () => {
+  it("shows only REM bars and descriptions in simple mode", () => {
+    const html = renderToStaticMarkup(createElement(PeriodBars, { points: [{ ...points[0]!, value: 90 }], stageMode: "simple", week: false, onPick: () => {} }));
+    expect(html).toContain("Estimated REM sleep per night.");
+    expect(html).toContain("REM 1 h 30 m");
+    expect(html).not.toContain("Deep");
+    expect(html).not.toContain("var(--stage-deep)");
+    expect(html).toContain("var(--stage-rem)");
+  });
+  it("retains stacked Deep and REM in detailed mode", () => {
+    const html = renderToStaticMarkup(createElement(PeriodBars, { points, stageMode: "detailed", week: false, onPick: () => {} }));
+    expect(html).toContain("Estimated deep and REM sleep per night, stacked bars.");
+    expect(html).toContain("Deep 1 h 30 m, REM 1 h 30 m");
+    expect(html).toContain("var(--stage-deep)");
+    expect(html).toContain("var(--stage-rem)");
+  });
+});

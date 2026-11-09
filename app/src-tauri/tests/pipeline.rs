@@ -276,7 +276,7 @@ fn fixture_v2_stages_tips_and_calendar_period() {
         );
         assert!(stages.signal_quality.is_finite());
         assert!(!night.tips.is_empty());
-        assert!(night.tips.len() <= 4);
+        assert!(night.tips.len() <= 6);
         assert!(night.tips.iter().any(|tip| tip.id == "short-night"));
         for tip in &night.tips {
             assert!(tip.evidence.as_ref().is_some_and(|e| !e.is_empty()));
@@ -333,6 +333,7 @@ fn fixture_v2_stages_tips_and_calendar_period() {
             .all(|dates| dates[0] > dates[1]));
     }
     let wire = serde_json::to_value(&summary).unwrap();
+    assert!(wire["avgStageMinutes"]["uncertain"].is_number());
     assert_eq!(wire["clampedToFirstNight"], true);
     assert!(wire["headline"].as_str().is_some_and(|s| !s.is_empty()));
     assert!(wire["tips"][0].get("evidenceDates").is_some());
@@ -353,7 +354,7 @@ fn stale_estimator_rereads_unchanged_dat_not_just_backup() {
     run(&store, &fixture(), "first");
     let conn = rusqlite::Connection::open(temp.path().join("sleeplens.db")).unwrap();
     conn.execute(
-        "UPDATE nights SET estimator_version=-1 WHERE date='2030-01-15'",
+        "UPDATE nights SET estimator_version=2 WHERE date='2030-01-15'",
         [],
     )
     .unwrap();
@@ -422,7 +423,7 @@ fn v1_database_migrates_without_losing_nights() {
     assert_eq!(
         conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .unwrap(),
-        3
+        4
     );
 }
 
@@ -580,6 +581,11 @@ fn period_clamping_uses_imported_days_and_hides_partial_previous_period() {
 
 #[test]
 fn old_scores_recompute_on_open_without_rereading_card_or_stages() {
+    assert_old_scores_recompute(2);
+    assert_old_scores_recompute(3);
+}
+
+fn assert_old_scores_recompute(schema_version: u32) {
     let temp = TempDir::new().unwrap();
     let store = db(&temp);
     run(&store, &fixture(), "first");
@@ -649,7 +655,8 @@ fn old_scores_recompute_on_open_without_rereading_card_or_stages() {
     // not load or re-estimate stages from high-resolution signals.
     conn.execute("UPDATE series SET blob=x'00' WHERE date='2030-01-15'", [])
         .unwrap();
-    conn.pragma_update(None, "user_version", 2).unwrap();
+    conn.pragma_update(None, "user_version", schema_version)
+        .unwrap();
     drop(conn);
     let reopened = Store::open(&path).unwrap();
     let refreshed = reopened.cached_night("2030-01-15").unwrap();
@@ -711,4 +718,253 @@ fn old_scores_recompute_on_open_without_rereading_card_or_stages() {
     let repeat = run(&Arc::new(Mutex::new(reopened)), &fixture(), "unchanged");
     assert_eq!(repeat.nights_skipped, 3);
     assert_eq!(repeat.nights_updated, 0);
+}
+
+#[test]
+fn pressure_insights_survive_store_round_trip_and_period_aggregation() {
+    use sleeplens_core::{EventCounts, Series, Session, TherapyEvent};
+    for expected in [
+        "pressure-ceiling-events",
+        "pressure-ceiling",
+        "pressure-floor-events",
+        "pressure-low-use",
+        "central-with-pressure",
+        "leak-at-high-pressure",
+        "pressure-ok",
+    ] {
+        let temp = TempDir::new().unwrap();
+        let store = db(&temp);
+        run(&store, &fixture(), "synthetic-pressure");
+        let mut s = store.lock().unwrap();
+        let mut night = s.night_detail("2030-01-15").unwrap();
+        let device = s.device_for_night(&night.list.date).unwrap();
+        night.stages = None;
+        night.list.usage_minutes = 300.;
+        night.list.ahi = Some(1.);
+        night.list.excess_leak_p95 = Some(0.);
+        night.list.large_leak_minutes = Some(0.);
+        night.list.event_counts = EventCounts::default();
+        night.list.interruptions = 0;
+        night.summary.cai = Some(0.);
+        night.summary.oai = Some(0.);
+        night.summary.hi = Some(0.);
+        let settings = night.settings.as_mut().unwrap();
+        settings.mode_label = "Auto CPAP".into();
+        settings.min_pressure = 5.;
+        settings.max_pressure = 10.;
+        let p90 = match expected {
+            "pressure-ceiling-events" | "pressure-ceiling" => 10.,
+            "pressure-low-use" => 5.,
+            _ => 7.,
+        };
+        night.list.pressure_p90 = Some(p90);
+        if expected == "pressure-ceiling-events" {
+            night.list.ahi = Some(6.);
+            night.summary.oai = Some(3.);
+        }
+        if expected == "pressure-floor-events" {
+            night.list.ahi = Some(3.);
+            night.summary.oai = Some(3.);
+        }
+        if expected == "central-with-pressure" {
+            night.list.ahi = Some(6.);
+            night.summary.cai = Some(6.);
+        }
+        if expected == "leak-at-high-pressure" {
+            night.list.excess_leak_p95 = Some(50.);
+            night.list.large_leak_minutes = Some(150.);
+        }
+        for day in 18..=24 {
+            let date = format!("2030-01-{day}");
+            let start = format!("{date}T18:00:00");
+            let end = format!("{date}T23:00:00");
+            night.list.date = date.clone();
+            night.list.start = Some(start.clone());
+            night.list.end = Some(end.clone());
+            night.sessions = vec![Session {
+                start: start.clone(),
+                end,
+                minutes: 300.,
+            }];
+            night.events = if expected == "pressure-floor-events" {
+                night.list.event_counts.obstructive = 15;
+                (0..15)
+                    .map(|_| TherapyEvent {
+                        time: start.clone(),
+                        kind: "obstructiveApnea".into(),
+                        code: 2,
+                        value: 10,
+                        pressure: Some(5.),
+                    })
+                    .collect()
+            } else {
+                vec![]
+            };
+            let pressure = (0..18000)
+                .map(|i| {
+                    Some(if expected == "leak-at-high-pressure" {
+                        if i < 9000 {
+                            5.
+                        } else {
+                            10.
+                        }
+                    } else {
+                        p90 as f32
+                    })
+                })
+                .collect();
+            let leak = (0..18000)
+                .map(|i| {
+                    Some(if expected == "leak-at-high-pressure" && i >= 9000 {
+                        50.
+                    } else {
+                        0.
+                    })
+                })
+                .collect::<Vec<_>>();
+            night.series = Some(Series {
+                series_start: start,
+                pressure,
+                excess_leak: leak.clone(),
+                total_leak: leak,
+                flow_amplitude: vec![Some(10.); 18000],
+                snore: vec![Some(0.); 18000],
+            });
+            sleeplens_core::score::refresh_score(&mut night);
+            s.save_night(&night, ("pressure-synthetic", &device), None)
+                .unwrap();
+        }
+        let detail = s.night_detail("2030-01-24").unwrap();
+        assert!(
+            detail.tips.iter().any(|tip| tip.id == expected)
+                == (expected != "pressure-floor-events"),
+            "night {expected}: {:?}",
+            detail.tips.iter().map(|t| &t.id).collect::<Vec<_>>()
+        );
+        assert!(
+            detail
+                .tips
+                .iter()
+                .filter(|tip| tip.category == "pressure")
+                .count()
+                <= 2
+        );
+        assert!(
+            detail
+                .tips
+                .iter()
+                .filter(|tip| tip.category == "therapy")
+                .count()
+                <= 4
+        );
+        let period = s.period_summary("week", Some("2030-01-24")).unwrap();
+        assert!(
+            period.tips.iter().any(|tip| tip.id == expected),
+            "period {expected}: {:?}",
+            period.tips.iter().map(|t| &t.id).collect::<Vec<_>>()
+        );
+        let pressure = period.pressure.as_ref().unwrap();
+        assert_eq!(pressure.setting_min, Some(5.));
+        assert_eq!(pressure.setting_max, Some(10.));
+        assert_eq!(pressure.avg_p90, Some(p90));
+        assert!(pressure.avg_share_at_max_pct.is_some());
+        if expected == "pressure-floor-events" {
+            assert_eq!(pressure.events_at_min_pct, Some(100.));
+        }
+        assert!(period
+            .tips
+            .iter()
+            .all(|tip| tip.evidence.is_some() && !tip.evidence_dates.is_empty()));
+        let wire = serde_json::to_value(&period).unwrap();
+        assert_eq!(wire["pressure"]["settingMax"], 10.);
+    }
+}
+
+#[test]
+fn calibrated_pressure_rules_survive_store_round_trip() {
+    use sleeplens_core::{EventCounts, Series, Session, TherapyEvent};
+
+    for (p90, event_count, expected_near_max) in [(7.5, 0, 0), (8., 0, 7), (7., 7, 0)] {
+        let temp = TempDir::new().unwrap();
+        let store = db(&temp);
+        run(&store, &fixture(), "synthetic-calibration");
+        let mut s = store.lock().unwrap();
+        let mut night = s.night_detail("2030-01-15").unwrap();
+        let device = s.device_for_night(&night.list.date).unwrap();
+        night.stages = None;
+        night.list.usage_minutes = 480.;
+        night.list.ahi = Some(0.9);
+        night.list.excess_leak_p95 = Some(0.);
+        night.list.large_leak_minutes = Some(0.);
+        night.list.event_counts = EventCounts {
+            obstructive: event_count,
+            ..Default::default()
+        };
+        night.list.interruptions = 0;
+        night.list.pressure_p90 = Some(p90);
+        night.summary.cai = Some(0.);
+        night.summary.oai = Some(event_count as f64 / 8.);
+        night.summary.hi = Some(0.);
+        let settings = night.settings.as_mut().unwrap();
+        settings.mode_label = "Auto CPAP".into();
+        settings.min_pressure = 5.;
+        settings.max_pressure = 8.;
+        for day in 18..=24 {
+            let date = format!("2030-01-{day}");
+            let start = format!("{date}T15:00:00");
+            let end = format!("{date}T23:00:00");
+            night.list.date = date;
+            night.list.start = Some(start.clone());
+            night.list.end = Some(end.clone());
+            night.sessions = vec![Session {
+                start: start.clone(),
+                end,
+                minutes: 480.,
+            }];
+            // Three of seven events near the floor must not alarm at 0.875/h.
+            night.events = (0..event_count)
+                .map(|i| TherapyEvent {
+                    time: start.clone(),
+                    kind: "obstructiveApnea".into(),
+                    code: 2,
+                    value: if i < 3 { 10 } else { 14 },
+                    pressure: None,
+                })
+                .collect();
+            night.series = Some(Series {
+                series_start: start,
+                // Exactly 6% of recorded seconds are within 0.5 of the maximum.
+                pressure: (0..28800)
+                    .map(|i| Some(if i < 1728 { 8. } else { 7. }))
+                    .collect(),
+                excess_leak: vec![Some(0.); 28800],
+                total_leak: vec![Some(0.); 28800],
+                flow_amplitude: vec![Some(10.); 28800],
+                snore: vec![Some(0.); 28800],
+            });
+            sleeplens_core::score::refresh_score(&mut night);
+            s.save_night(&night, ("pressure-calibration", &device), None)
+                .unwrap();
+        }
+        let detail = s.night_detail("2030-01-24").unwrap();
+        assert!(!detail.tips.iter().any(|tip| matches!(
+            tip.id.as_str(),
+            "pressure-ceiling" | "pressure-ceiling-events" | "pressure-floor-events"
+        )));
+        let period = s.period_summary("week", Some("2030-01-24")).unwrap();
+        let pressure = period.pressure.as_ref().unwrap();
+        assert_eq!(pressure.nights_near_max, expected_near_max);
+        assert_eq!(pressure.avg_share_at_max_pct, Some(6.));
+        assert!(!period
+            .tips
+            .iter()
+            .any(|tip| tip.id == "pressure-floor-events"));
+        assert_eq!(
+            period.tips.iter().any(|tip| tip.id == "pressure-ceiling"),
+            expected_near_max == 7
+        );
+        if event_count > 0 {
+            assert!((pressure.events_at_min_pct.unwrap() - 300. / 7.).abs() < 1e-10);
+        }
+    }
 }

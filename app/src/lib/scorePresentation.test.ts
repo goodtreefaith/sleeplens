@@ -56,7 +56,7 @@ describe("score presentation", () => {
 describe("stage colour tokens", () => {
   it("defines four dedicated stage colours in every theme without a REM mix override", () => {
     expect(stageStyles).not.toContain("color-mix");
-    for (const stage of ["awake", "rem", "light", "deep"]) {
+    for (const stage of ["awake", "rem", "light", "deep", "non-rem"]) {
       const colours = [...stageStyles.matchAll(new RegExp(`--stage-${stage}:(#[0-9A-Fa-f]{6})`, "g"))].map(match => match[1]!);
       expect(colours).toHaveLength(3);
       expect(colours[1]).toBe(colours[2]);
@@ -80,7 +80,7 @@ describe("stage colour tokens", () => {
     const cardDark = styles.split(':root[data-theme="dark"]')[1]!.match(/--surface:(#[0-9A-Fa-f]{6})/)![1]!;
     for (const [theme, background] of [[light, cardLight], [dark, cardDark]] as const) {
       const outline = theme.match(/--stage-outline:(#[0-9A-Fa-f]{6})/)?.[1];
-      for (const stage of ["awake", "rem", "light", "deep"]) {
+      for (const stage of ["awake", "rem", "light", "deep", "non-rem"]) {
         const fill = theme.match(new RegExp(`--stage-${stage}:(#[0-9A-Fa-f]{6})`))![1]!;
         expect(Math.max(contrast(fill, background), outline ? contrast(outline, background) : 0), stage).toBeGreaterThanOrEqual(3);
       }

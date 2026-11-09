@@ -8,6 +8,7 @@ pub mod bkp;
 pub mod dat;
 pub mod detect;
 pub mod model;
+pub mod pressure;
 pub mod score;
 pub mod settings;
 pub mod sleep_stages;

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import uPlot from "uplot";
-import type { NightDetail, PressureUnit } from "../api/types";
+import type { NightDetail, PressureUnit, TherapyEvent } from "../api/types";
 import { Hypnogram, type HypnogramScale } from "../components/SleepStages";
 import { HelpTip } from "../components/HelpTip";
 import { EVENT_STYLE, Icon, type MarkerKind, shapePath, Swatch } from "../components/Icon";
@@ -18,6 +18,20 @@ interface Props {
   theme: "light" | "dark";
   zoom: Zoom | null;
   onZoom: (z: Zoom | null) => void;
+}
+
+/** Uses the same near-minimum tolerance as pressure insights, including ramp. */
+export function eventAtMinimum(event: TherapyEvent, minimum: number | null | undefined): boolean {
+  return minimum != null && event.pressure != null && (event.kind === "obstructiveApnea" || event.kind === "hypopnea") && Math.abs(event.pressure - minimum) <= 0.5;
+}
+
+export function pressureSettingBounds(detail: Pick<NightDetail, "settings">): number[] {
+  return detail.settings ? [...new Set([detail.settings.minPressure, detail.settings.maxPressure])] : [];
+}
+
+/** Open downward caret, distinct from every breathing-event marker. */
+export function minimumPressureMarkerPath(cx: number, cy: number, r: number): string {
+  return `M${cx - r} ${cy - r / 2}L${cx} ${cy + r / 2}L${cx + r} ${cy - r / 2}`;
 }
 
 export const NIGHT_CHART_AXIS_WIDTH = 84;
@@ -146,9 +160,39 @@ export function NightCharts({ detail, unit, theme, zoom, onZoom }: Props) {
       plugins: [eventLines, wheelZoom]
     });
 
+    const settingLines: uPlot.Plugin = {
+      hooks: { draw: (p: uPlot) => {
+        const ctx = p.ctx;
+        const ratio = devicePixelRatio;
+        const { left, top, width: chartWidth, height } = p.bbox;
+        ctx.save();
+        ctx.beginPath(); ctx.rect(left, top, chartWidth, height); ctx.clip();
+        ctx.strokeStyle = muted;
+        ctx.lineWidth = ratio;
+        ctx.setLineDash([4 * ratio, 4 * ratio]);
+        for (const setting of pressureSettingBounds(detail)) {
+          const y = p.valToPos(setting, "y", true);
+          ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(left + chartWidth, y); ctx.stroke();
+        }
+        ctx.setLineDash([]);
+        for (const event of detail.events.filter(event => eventAtMinimum(event, detail.settings?.minPressure))) {
+          const t = wallSeconds(event.time);
+          if (t < p.scales.x!.min! || t > p.scales.x!.max!) continue;
+          const px = p.valToPos(t, "x", true);
+          const py = p.valToPos(event.pressure!, "y", true);
+          ctx.strokeStyle = cssVar("--ev1");
+          ctx.lineWidth = 2 * ratio;
+          const path = new Path2D(minimumPressureMarkerPath(px, py, 5 * ratio));
+          ctx.stroke(path);
+        }
+        ctx.restore();
+      } }
+    };
+
     const pressureOpts: uPlot.Options = {
       ...base(150, false),
-      scales: { x: { time: true, min: x[0], max: x[x.length - 1] }, y: { range: (_p, mn, mx) => [Math.floor((mn ?? 0) - 0.5), Math.ceil((mx ?? 10) + 0.5)] } },
+      scales: { x: { time: true, min: x[0], max: x[x.length - 1] }, y: { range: (_p, mn, mx) => [Math.floor(Math.min(mn ?? 0, ...pressureSettingBounds(detail)) - 0.5), Math.ceil(Math.max(mx ?? 10, ...pressureSettingBounds(detail)) + 0.5)] } },
+      plugins: [eventLines, wheelZoom, settingLines],
       series: [{}, { label: `Pressure (${u})`, stroke: col("var(--p-line)"), width: 1.5, points: { show: false } }],
       hooks: {
         setScale: [propagate],
@@ -243,7 +287,7 @@ export function NightCharts({ detail, unit, theme, zoom, onZoom }: Props) {
     { label: "Pressure", sub: u, help: "pressure", ref: refs[0]! },
     { label: "Extra leak", sub: "L/min, beyond the vent", help: "excessLeak", ref: refs[1]! },
     { label: "Flow amplitude", sub: "L/min, size of each breath", ref: refs[2]! },
-    { label: "Sleep stages", sub: detail.stages ? "Estimated from breathing, not a sleep study. Breathing-based estimates often under-count deep and REM sleep; a low number isn't by itself a sign of a problem." : "Not recorded. Re-read the card to add stages.", help: "sleepStages" },
+    { label: "Sleep stages", sub: detail.stages ? "Estimated from breathing and not validated against a sleep-lab test. Uncertain means the signal cannot support a stage claim; deep sleep is the least reliable estimate." : "Not recorded. Re-read the card to add stages.", help: "sleepStages" },
     { label: "Events", sub: "each mark is one event", ref: refs[3]! }
   ];
 
@@ -257,6 +301,10 @@ export function NightCharts({ detail, unit, theme, zoom, onZoom }: Props) {
         </div>
         <button className="btn" type="button" aria-disabled={!zoom} title="Drag across a chart to zoom in. Pinch or hold Cmd and scroll to zoom around the pointer. Select Whole night to reset." onClick={() => zoom && onZoom(null)}><Icon name="zoomOut" />Whole night</button>
       </div>
+      {detail.settings ? <div className="pressure-chart-legend" aria-label="Pressure chart annotations">
+        <span><svg viewBox="0 0 18 14" aria-hidden="true"><path d="M0 7h18" stroke="currentColor" strokeDasharray="4 3" /></svg>Min {detail.settings.minPressure} / Max {detail.settings.maxPressure} {u} <HelpTip term="pressureRange" /></span>
+        <span><svg viewBox="0 0 18 14" aria-hidden="true"><path d={minimumPressureMarkerPath(9, 7, 6)} fill="none" stroke="var(--ev1)" strokeWidth="2" /></svg>Obstructive / hypopnea at minimum ({detail.events.filter(event => eventAtMinimum(event, detail.settings?.minPressure)).length}) <HelpTip term="pressureEventsAtMin" /></span>
+      </div> : null}
       <p className="readout" aria-live="off">{readout || "\u00a0"}</p>
       <div className="charts">
         {rows.map((r) => (

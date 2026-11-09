@@ -302,11 +302,12 @@ fn run() -> Result<(), (u8, String)> {
         }
         if let Some(stages) = &r.night.stages {
             println!(
-                "  estimated stages: wake {:.1}, light {:.1}, deep {:.1}, REM {:.1} min; signal quality {:.0}%",
+                "  estimated stages: wake {:.1}, light {:.1}, deep {:.1}, REM {:.1}, uncertain {:.1} min; signal quality {:.0}%",
                 stages.minutes.wake,
                 stages.minutes.light,
                 stages.minutes.deep,
                 stages.minutes.rem,
+                stages.minutes.uncertain,
                 stages.signal_quality * 100.0
             );
         }

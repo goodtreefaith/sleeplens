@@ -59,7 +59,8 @@ fn stage_index(stage: SleepStage) -> usize {
         SleepStage::Light => 1,
         SleepStage::Deep => 2,
         SleepStage::Rem => 3,
-        SleepStage::NoData => 4,
+        SleepStage::Uncertain => 4,
+        SleepStage::NoData => 5,
     }
 }
 
@@ -123,10 +124,14 @@ fn print_night(
         result.minutes.light,
         result.minutes.deep,
         result.minutes.rem,
+        result.minutes.uncertain,
     ];
     let masked_on = flow.iter().filter(|v| v.is_finite()).count() as f32 / HZ as f32 / 60.0;
     print!("{date} mask-on {masked_on:.1} min");
-    for (label, value) in ["wake", "light", "deep", "rem"].into_iter().zip(minutes) {
+    for (label, value) in ["wake", "light", "deep", "rem", "uncertain"]
+        .into_iter()
+        .zip(minutes)
+    {
         let percent = if masked_on > 0.0 {
             value / masked_on * 100.0
         } else {
@@ -135,19 +140,28 @@ fn print_night(
         print!(" | {label} {value:.1} min ({percent:.1}%)");
     }
     println!(" | quality {:.2}", result.signal_quality);
-    let hypnogram: String = result
-        .stages
-        .chunks(10)
-        .map(|chunk| {
-            let mut counts = [0usize; 5];
-            for &stage in chunk {
-                counts[stage_index(stage)] += 1;
-            }
-            let index = (0..5).max_by_key(|&i| counts[i]).unwrap_or(4);
-            ['W', 'L', 'D', 'R', '-'][index]
-        })
-        .collect();
-    println!("  {hypnogram}");
+    let mut detailed = String::new();
+    let mut simple = String::new();
+    for chunk in result.stages.chunks(10) {
+        let mut counts = [0usize; 6];
+        for &stage in chunk {
+            counts[stage_index(stage)] += 1;
+        }
+        let detailed_index = (0..6).max_by_key(|&i| counts[i]).unwrap_or(5);
+        detailed.push(['W', 'L', 'D', 'R', 'U', '-'][detailed_index]);
+        // Combine Light and Deep before choosing the most common simple stage.
+        let simple_counts = [
+            counts[0],
+            counts[1] + counts[2],
+            counts[3],
+            counts[4],
+            counts[5],
+        ];
+        let simple_index = (0..5).max_by_key(|&i| simple_counts[i]).unwrap_or(4);
+        simple.push(['W', 'N', 'R', 'U', '-'][simple_index]);
+    }
+    println!("  Detailed {detailed}");
+    println!("  Simple   {simple}");
     if debug {
         println!("{}", sleep_stage_debug(&input));
     }
@@ -198,7 +212,7 @@ fn run() -> Result<(), &'static str> {
     if nights.is_empty() {
         return Err("No dated DAT night files found");
     }
-    println!("Estimated stages from breathing only. Hypnogram: W wake, L light, D deep, R REM, - no data; one character per five minutes.");
+    println!("Estimated stages from breathing only. Hypnograms: W wake, L light, D deep, N non-REM, R REM, U uncertain, - no data; one character per five minutes.");
     for (date, path) in nights.iter().skip(nights.len().saturating_sub(last)) {
         print_night(path, date, &events, debug)?;
     }

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sleeplens_core::{Device, Settings};
 
-// Command responses share the core contract, including v2.1 period and tip fields.
+// Command responses share the core contract, including v2.2 pressure observations and uncertainty.
 pub use sleeplens_core::PeriodSummary;
 
 #[derive(Serialize)]

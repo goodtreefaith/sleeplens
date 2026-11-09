@@ -20,7 +20,7 @@ fn inspect(args: &[&str]) -> String {
 }
 
 #[test]
-fn fixture_json_keeps_legacy_fields_and_adds_v2_1_details() {
+fn fixture_json_keeps_legacy_fields_and_adds_v2_2_details() {
     let output: Value = serde_json::from_str(&inspect(&["--json"])).unwrap();
     let nights = output["nights"].as_array().unwrap();
     assert_eq!(nights.len(), 3);
@@ -33,6 +33,9 @@ fn fixture_json_keeps_legacy_fields_and_adds_v2_1_details() {
         assert!(night["excessLeakP95"].is_number());
         assert!(night["interruptions"].is_number());
         assert_eq!(night["stages"]["epochSeconds"], 30);
+        assert_eq!(night["stages"]["estimatorVersion"], 3);
+        assert!(night["stages"]["minutes"]["uncertain"].is_number());
+        assert_eq!(night["stages"]["confidence"]["rem"], "low");
         assert!(!night["stages"]["stages"].as_array().unwrap().is_empty());
         let tips = night["tips"].as_array().unwrap();
         assert!(!tips.is_empty());

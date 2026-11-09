@@ -335,3 +335,71 @@ These replace the matching v2 rules.
 
   Missing components are still dropped and the rest rescaled; labels stay
   (85+ Great, 70-84 Good, 50-69 Fair, under 50 Poor).
+
+## Version 2.2 changes (2026-11-09): honest sleep stages and pressure insights
+
+Based on `docs/SLEEP_STAGE_EVIDENCE.md`: from airflow alone, sleep/wake is
+moderately reliable, REM low, Deep very low; our heuristic is unvalidated.
+
+### Sleep stages
+
+- `SleepStage` gains `"uncertain"`: mask on, but the breathing signal is
+  confounded (large leak, artifact, a breathing event and its recovery,
+  periodic breathing) so no stage is claimed. Leak/artifact no longer count
+  as Wake; event context no longer counts as REM.
+- `StageMinutes` gains `uncertain: number`.
+- `SleepStageEstimate` gains
+  `confidence: { sleepWake: "moderate"; rem: "low"; deep: "veryLow" }`
+  (fixed values from the evidence; shown in help) and `estimatorVersion` 3.
+- UI shows stages in two modes: **Simple** (default): Awake / Non-REM
+  (= light + deep) / REM / Uncertain; **Detailed (experimental)**: Awake /
+  Light / Deep / REM / Uncertain, with "Deep sleep is the least reliable part
+  of this estimate." The choice is remembered.
+- Score component "Sleep stages (estimated)" (10 points) becomes
+  **"REM sleep (estimated, low confidence)"**: 10 × min(1, REM share of
+  sleep ÷ 0.20). Deep sleep no longer affects the score. Uncertain time is
+  excluded from the shares; if more than 40 % of mask-on time is uncertain,
+  the component is dropped (and the rest rescaled).
+
+### Pressure insights
+
+Tips gain `category: "therapy" | "pressure"` (existing tips are "therapy").
+Pressure tips are **observations to discuss with a clinician, never
+instructions**: they must not say "increase", "decrease", "raise", "lower"
+or name a target pressure; they say what the data shows and suggest asking
+the clinician whether the setting still suits the person. Every pressure tip
+carries evidence + evidenceDates and ends with the same line in the UI:
+"SleepLens never changes settings. Only your clinician should change your
+pressure."
+
+`NightDetail.tips` and `PeriodSummary.tips` include pressure tips;
+`PeriodSummary` gains `pressure: PressureSummary | null`:
+
+```ts
+interface PressureSummary {
+  settingMin: number | null; settingMax: number | null;   // most recent prescription in the range
+  avgP90: number | null;
+  nightsNearMax: number;      // P90 >= max - 0.25 or >= 10% of recorded seconds within 0.5 of max
+  nightsNearMin: number;      // P90 <= min + 0.25 or >= 50% of recorded seconds within 0.5 of min
+  avgShareAtMaxPct: number | null;  // mean % of mask-on time within 0.5 of max (from 1 Hz pressure)
+  eventsAtMinPct: number | null;    // % of obstructive apneas + hypopneas whose event pressure was within 0.5 of the min
+}
+```
+
+Rules (period ≥ 7 nights with use; night-level versions use the same
+evidence for one night, worded for one night; thresholds documented with
+sources in `docs/PRESSURE_INSIGHTS.md`):
+
+| id | When | Severity | Gist |
+| --- | --- | --- | --- |
+| `pressure-ceiling-events` | Near max on ≥ 30 % of nights, defined as P90 ≥ max − 0.25 OR ≥ 10 % of recorded mask-on seconds within 0.5 of max; mean residual AHI ≥ 5 or mean obstructive index ≥ 2 on those nights | talk | Often at maximum pressure while events were still recorded — ask whether the maximum still suits you |
+| `pressure-ceiling` | Same near-max and ≥ 30 % test, AHI < 5; night-level tip additionally needs ≥ 10 % of recorded seconds near max, or ≥ 20 % when AHI < 5 | info | Machine often uses the top of its range — worth mentioning at the next review |
+| `pressure-floor-events` | ≥ 3 nights each with ≥ 5 obstructive apneas + hypopneas with known pressures and ≥ 30 % of those event pressures within 0.5 of minimum, including ramp; mean obstructive + hypopnea index ≥ 3/h or mean AHI ≥ 5 gives watch, otherwise index ≥ 1/h gives info; suppress lower burden and night-level tips | watch / info | Watch: events often happened at the lowest pressure; discuss at review. Info: Some breathing events happened at the lowest pressure, often early in the night. Mention this at your next review. |
+| `pressure-low-use` | Near min on ≥ 70 % of nights, defined as P90 ≤ min + 0.25 OR ≥ 50 % of recorded mask-on seconds within 0.5 of min; AHI < 5 and few events | info | Pressure rarely rose above the minimum — the range may be wider than needed; mention at review |
+| `central-with-pressure` | central apnea index > 5, or centrals > 50 % of events with AHI > 5 | talk | Many central events — these can be related to pressure; discuss with your clinician |
+| `leak-at-high-pressure` | large leak / excess-leak p95 clearly higher on high-pressure nights or in high-pressure stretches | watch | Leak rose when pressure was high — mask fit matters; discuss with your equipment provider or clinician |
+| `pressure-ok` | AHI < 5, P90 inside the range and not near max under the calibrated P90-or-time-share definition, leak fine | good | The pressure range looks like it is doing its job |
+
+### v2.2 calibration, 2026-11-09
+
+Near-boundary night counts and pressure tips use the P90-or-recorded-time definitions in the v2.2 table. A coarse P90 of 7.5 against maximum 8 with 6% of recorded time near maximum does not qualify. Floor-event severity now depends on event burden across at least three qualifying nights; a large share alone does not trigger a tip. The calibration uses synthetic regression coverage and does not require reading real cards.

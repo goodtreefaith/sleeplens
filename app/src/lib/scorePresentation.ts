@@ -6,7 +6,7 @@ export const SCORE_COMPONENTS = [
   { key: "breathing", label: "Breathing events", maxPoints: 30, color: "var(--score-breathing)" },
   { key: "maskSeal", label: "Mask seal", maxPoints: 15, color: "var(--score-mask-seal)" },
   { key: "continuity", label: "Unbroken sleep", maxPoints: 15, color: "var(--score-continuity)" },
-  { key: "sleepStages", label: "Sleep stages (estimated)", maxPoints: 10, color: "var(--score-stages)" }
+  { key: "sleepStages", label: "REM sleep (estimated, low confidence)", maxPoints: 10, color: "var(--score-stages)" }
 ] as const;
 
 export function contributorStatus(points: number, maximum: number): string {

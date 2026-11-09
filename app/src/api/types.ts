@@ -231,14 +231,15 @@ export interface SleepLensApi {
 }
 
 export type Period = "week" | "month" | "6months" | "year";
-export type SleepStage = "wake" | "light" | "deep" | "rem" | "noData";
-export interface StageMinutes { wake: number; light: number; deep: number; rem: number }
+export type SleepStage = "wake" | "light" | "deep" | "rem" | "uncertain" | "noData";
+export interface StageMinutes { wake: number; light: number; deep: number; rem: number; uncertain: number }
 export interface SleepStageEstimate {
   start: string;
   epochSeconds: number;
   stages: SleepStage[];
   minutes: StageMinutes;
   signalQuality: number;
+  confidence: { sleepWake: "moderate"; rem: "low"; deep: "veryLow" };
   estimatorVersion: number;
 }
 export interface SleepScore {
@@ -254,6 +255,7 @@ export interface SleepScore {
   }[];
 }
 export interface Tip {
+  category: "therapy" | "pressure";
   id: string;
   severity: "good" | "info" | "watch" | "talk";
   title: string;
@@ -262,7 +264,15 @@ export interface Tip {
   evidence: string | null;
   evidenceDates: string[];
 }
+export interface PressureSummary {
+  settingMin: number | null; settingMax: number | null;
+  avgP90: number | null;
+  nightsNearMax: number; nightsNearMin: number;
+  avgShareAtMaxPct: number | null;
+  eventsAtMinPct: number | null;
+}
 export interface PeriodSummary {
+  pressure: PressureSummary | null;
   headline: string;
   clampedToFirstNight: boolean;
   period: Period;

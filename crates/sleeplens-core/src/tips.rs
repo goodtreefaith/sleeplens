@@ -3,6 +3,7 @@ use crate::model::{Night, PeriodSummary, Tip};
 
 fn tip(id: &str, severity: &str, title: &str, body: &str, slug: &str) -> Tip {
     Tip {
+        category: "therapy".into(),
         id: id.into(),
         severity: severity.into(),
         title: title.into(),
@@ -157,10 +158,34 @@ pub fn night_tips(night: &Night, recent_nights: &[Night]) -> Vec<Tip> {
     if let Some(ahi) = n.ahi {
         text.push_str(&format!(", AHI {ahi:.1}"));
     }
-    finish(tips, 4, night_evidence(all_good(), text))
+    let mut result = finish(tips, 4, night_evidence(all_good(), text));
+    result.extend(crate::pressure::night_pressure_tips(night));
+    if result
+        .iter()
+        .any(|t| t.category == "pressure" && t.severity != "good")
+    {
+        result.retain(|t| t.id != "all-good");
+    }
+    result.sort_by_key(rank);
+    result
 }
 /// Generate period guides from the summary and distinct nights within its date range.
 pub fn period_tips(summary: &PeriodSummary, nights: &[Night]) -> Vec<Tip> {
+    period_tips_with_pressure(
+        summary,
+        nights,
+        crate::pressure::period_pressure_tips_in_range(nights, &summary.from, &summary.to),
+    )
+}
+
+/// Merge pressure observations computed from compact facts with therapy guides.
+pub fn period_tips_with_pressure(
+    summary: &PeriodSummary,
+    nights: &[Night],
+    mut pressure: Vec<Tip>,
+) -> Vec<Tip> {
+    pressure.sort_by_key(rank);
+    pressure.truncate(2);
     let selected: std::collections::BTreeMap<_, _> = nights
         .iter()
         .filter(|n| n.list.date >= summary.from && n.list.date <= summary.to)
@@ -288,9 +313,10 @@ pub fn period_tips(summary: &PeriodSummary, nights: &[Night]) -> Vec<Tip> {
             changed,
         ));
     }
-    finish(
+    let limit = 5 - pressure.len();
+    let mut result = finish(
         tips,
-        5,
+        limit,
         count_evidence(
             all_good(),
             format!(
@@ -300,7 +326,16 @@ pub fn period_tips(summary: &PeriodSummary, nights: &[Night]) -> Vec<Tip> {
             ),
             all_dates(),
         ),
-    )
+    );
+    result.extend(pressure);
+    if result
+        .iter()
+        .any(|t| t.category == "pressure" && t.severity != "good")
+    {
+        result.retain(|t| t.id != "all-good");
+    }
+    result.sort_by_key(rank);
+    result
 }
 
 #[cfg(test)]

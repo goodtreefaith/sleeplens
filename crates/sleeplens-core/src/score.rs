@@ -1,6 +1,9 @@
 //! Estimated therapy score. Missing measurements never count as zero.
 use crate::model::{Night, ScoreComponent, SleepScore};
 
+/// Bumped when score rules change, so stored totals can be refreshed.
+pub const SCORE_VERSION: u32 = 3;
+
 fn linear(value: f64, knots: &[(f64, f64)]) -> f64 {
     if value <= knots[0].0 {
         return knots[0].1;
@@ -114,23 +117,21 @@ pub fn sleep_score(night: &Night) -> Option<SleepScore> {
     ));
     if let Some(stages) = &night.stages {
         let m = &stages.minutes;
-        let sleep = (m.light + m.deep + m.rem) as f64;
-        let (deep_share, rem_share) = if sleep > 0. {
-            (m.deep as f64 / sleep, m.rem as f64 / sleep)
-        } else {
-            (0., 0.)
-        };
-        components.push(component(
-            "sleepStages",
-            "Sleep stages (estimated)",
-            5. * (deep_share / 0.15).clamp(0., 1.) + 5. * (rem_share / 0.20).clamp(0., 1.),
-            10.,
-            format!(
-                "Estimated deep sleep was {:.0} min and REM sleep was {:.0} min.",
-                (m.deep / 5.).round() * 5.,
-                (m.rem / 5.).round() * 5.
-            ),
-        ));
+        // Confounded mask-on time must not dilute the REM share of estimated sleep.
+        if m.uncertain as f64 / n.usage_minutes <= 0.40 {
+            let sleep = m.light as f64 + m.deep as f64 + m.rem as f64;
+            let rem_share = if sleep > 0. { m.rem as f64 / sleep } else { 0. };
+            components.push(component(
+                "sleepStages",
+                "REM sleep (estimated, low confidence)",
+                10. * (rem_share / 0.20).clamp(0., 1.),
+                10.,
+                format!(
+                    "Estimated REM sleep was {:.0} min, with low confidence.",
+                    (m.rem / 5.).round() * 5.
+                ),
+            ));
+        }
     }
     let total = (components.iter().map(|c| c.points).sum::<f64>()
         / components.iter().map(|c| c.max_points).sum::<f64>()
@@ -194,23 +195,25 @@ pub(crate) mod tests {
         n.list.usage_minutes = 29.9;
         assert!(sleep_score(&n).is_none());
     }
+    fn stages(
+        wake: f32,
+        light: f32,
+        deep: f32,
+        rem: f32,
+        uncertain: f32,
+    ) -> crate::sleep_stages::SleepStageEstimate {
+        serde_json::from_value(serde_json::json!({
+            "start": "2026-01-01T22:00:00", "epochSeconds": 30, "stages": [],
+            "minutes": { "wake": wake, "light": light, "deep": deep, "rem": rem, "uncertain": uncertain },
+            "signalQuality": 1., "estimatorVersion": 3,
+            "confidence": { "sleepWake": "moderate", "rem": "low", "deep": "veryLow" }
+        })).unwrap()
+    }
     #[test]
     fn continuity_stages_and_label() {
         let mut n = night();
         n.list.interruptions = 3;
-        n.stages = Some(crate::sleep_stages::SleepStageEstimate {
-            start: String::new(),
-            epoch_seconds: 30,
-            stages: vec![],
-            minutes: crate::sleep_stages::StageMinutes {
-                wake: 42.,
-                light: 245.7,
-                deep: 66.15,
-                rem: 66.15,
-            },
-            signal_quality: 1.,
-            estimator_version: 1,
-        });
+        n.stages = Some(stages(42., 245.7, 66.15, 66.15, 0.));
         let score = sleep_score(&n).unwrap();
         assert_eq!(
             score
@@ -228,7 +231,7 @@ pub(crate) mod tests {
                 .find(|c| c.key == "sleepStages")
                 .unwrap()
                 .points,
-            9.4
+            8.8
         );
         assert_eq!(score.label, "Good");
     }
@@ -300,20 +303,8 @@ pub(crate) mod tests {
     #[test]
     fn stage_and_wake_linear_penalties() {
         let mut n = night();
-        n.stages = Some(crate::sleep_stages::SleepStageEstimate {
-            start: String::new(),
-            epoch_seconds: 30,
-            stages: vec![],
-            minutes: crate::sleep_stages::StageMinutes {
-                wake: 42.,
-                light: 330.75,
-                deep: 33.075,
-                rem: 14.175,
-            },
-            signal_quality: 1.,
-            estimator_version: 1,
-        });
-        assert_eq!(points(&n, "sleepStages"), 3.9);
+        n.stages = Some(stages(42., 330.75, 33.075, 14.175, 0.));
+        assert_eq!(points(&n, "sleepStages"), 1.9);
         assert_eq!(points(&n, "continuity"), 13.);
         n.stages.as_mut().unwrap().minutes.wake = 52.5;
         assert_eq!(points(&n, "continuity"), 12.);
@@ -324,24 +315,12 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn separate_deep_and_rem_parts_and_plain_details() {
+    fn only_rem_earns_stage_points_and_plain_details() {
         let mut n = night();
         n.list.usage_minutes = 418.;
-        n.stages = Some(crate::sleep_stages::SleepStageEstimate {
-            start: String::new(),
-            epoch_seconds: 30,
-            stages: vec![],
-            minutes: crate::sleep_stages::StageMinutes {
-                wake: 18.,
-                light: 260.,
-                deep: 140.,
-                rem: 0.,
-            },
-            signal_quality: 1.,
-            estimator_version: 1,
-        });
+        n.stages = Some(stages(18., 260., 140., 0., 0.));
         // Extra deep sleep cannot make up for absent REM sleep.
-        assert_eq!(points(&n, "sleepStages"), 5.);
+        assert_eq!(points(&n, "sleepStages"), 0.);
         let m = &mut n.stages.as_mut().unwrap().minutes;
         m.deep = 62.;
         m.rem = 78.;
@@ -352,8 +331,38 @@ pub(crate) mod tests {
         );
         assert_eq!(
             score.components.last().unwrap().detail,
-            "Estimated deep sleep was 60 min and REM sleep was 80 min."
+            "Estimated REM sleep was 80 min, with low confidence."
         );
+    }
+
+    #[test]
+    fn rem_share_excludes_uncertain_and_drops_only_above_forty_percent() {
+        let mut n = night();
+        n.list.usage_minutes = 500.;
+        n.stages = Some(stages(0., 240., 0., 60., 200.));
+        // Exactly 40% uncertain retains the component; REM is 20% of known sleep.
+        let score = sleep_score(&n).unwrap();
+        let rem = score.components.last().unwrap();
+        assert_eq!(rem.key, "sleepStages");
+        assert_eq!(rem.label, "REM sleep (estimated, low confidence)");
+        assert_eq!(rem.max_points, 10.);
+        assert_eq!(rem.points, 10.);
+        assert_eq!(score.total, 100);
+        // Reclassifying non-REM from light to deep must not affect the score.
+        n.stages.as_mut().unwrap().minutes.light = 0.;
+        n.stages.as_mut().unwrap().minutes.deep = 240.;
+        assert_eq!(
+            serde_json::to_value(sleep_score(&n).unwrap()).unwrap(),
+            serde_json::to_value(score).unwrap()
+        );
+        // The remaining available components are rescaled after dropping REM.
+        n.stages.as_mut().unwrap().minutes.uncertain = 200.1;
+        let without_rem = sleep_score(&n).unwrap();
+        assert!(!without_rem
+            .components
+            .iter()
+            .any(|c| c.key == "sleepStages"));
+        assert_eq!(without_rem.total, 100);
     }
 
     #[test]
@@ -369,19 +378,7 @@ pub(crate) mod tests {
             n.list.large_leak_minutes = Some(leak);
             n.list.excess_leak_p95 = Some(p95);
             n.list.interruptions = interruptions;
-            n.stages = Some(crate::sleep_stages::SleepStageEstimate {
-                start: String::new(),
-                epoch_seconds: 30,
-                stages: vec![],
-                minutes: crate::sleep_stages::StageMinutes {
-                    wake,
-                    light: 480. - wake - deep - rem,
-                    deep,
-                    rem,
-                },
-                signal_quality: 1.,
-                estimator_version: 1,
-            });
+            n.stages = Some(stages(wake, 480. - wake - deep - rem, deep, rem, 0.));
             assert_eq!(sleep_score(&n).unwrap().total, total);
         }
     }
@@ -389,19 +386,7 @@ pub(crate) mod tests {
     #[test]
     fn present_but_all_wake_stages_score_zero() {
         let mut n = night();
-        n.stages = Some(crate::sleep_stages::SleepStageEstimate {
-            start: String::new(),
-            epoch_seconds: 30,
-            stages: vec![],
-            minutes: crate::sleep_stages::StageMinutes {
-                wake: 420.,
-                light: 0.,
-                deep: 0.,
-                rem: 0.,
-            },
-            signal_quality: 1.,
-            estimator_version: 1,
-        });
+        n.stages = Some(stages(420., 0., 0., 0., 0.));
         assert_eq!(points(&n, "sleepStages"), 0.);
         assert_eq!(sleep_score(&n).unwrap().total, 65);
     }

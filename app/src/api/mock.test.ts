@@ -141,8 +141,8 @@ describe("v2 periods", () => {
     expect(empty.bestNight).toBeNull();
     expect(empty.previous).toEqual({ avgUsageMinutes: null, avgAhi: null, avgSleepScore: null, compliancePct: null });
     const ns = (await api.listNights()).slice(-2);
-    const p = computePeriodSummary(ns, "week", ns[1]!.date, d => d === ns[0]!.date ? { wake: 10, light: 200, deep: 40, rem: 70 } : null);
-    expect(p.avgStageMinutes).toEqual({ wake: 10, light: 200, deep: 40, rem: 70 });
+    const p = computePeriodSummary(ns, "week", ns[1]!.date, d => d === ns[0]!.date ? { wake: 10, light: 200, deep: 40, rem: 70, uncertain: 0 } : null);
+    expect(p.avgStageMinutes).toEqual({ wake: 10, light: 200, deep: 40, rem: 70, uncertain: 0 });
   });
 
   it("has varied scores and plausible staged epochs aligned to mask-off gaps", async () => {

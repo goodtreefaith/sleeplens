@@ -1,5 +1,5 @@
 import { wallSeconds } from "../lib/dates";
-import type { NightListItem, Session, SleepScore, SleepStageEstimate, SleepStage, StageMinutes, Tip } from "./types";
+import type { NightListItem, Session, SleepScore, SleepStageEstimate, SleepStage, StageMinutes, Tip, TherapyEvent } from "./types";
 
 const clamp = (n: number, max: number) => Math.max(0, Math.min(max, n));
 const round = (n: number) => Math.round(n * 10) / 10;
@@ -13,10 +13,10 @@ function linear(x: number, points: [number, number][]): number {
 }
 
 /** Synthetic 30-second epochs, preserving mask-off gaps in the shared wall-clock axis. */
-export function estimateMockStages(item: NightListItem, sessions: Session[], index: number): SleepStageEstimate {
+export function estimateMockStages(item: NightListItem, sessions: Session[], index: number, events: TherapyEvent[] = [], leakBlocks: [number, number][] = []): SleepStageEstimate {
   const start = wallSeconds(item.start!);
   const epochs = Math.ceil((wallSeconds(item.end!) - start) / 30);
-  const minutes: StageMinutes = { wake: 0, light: 0, deep: 0, rem: 0 };
+  const minutes: StageMinutes = { wake: 0, light: 0, deep: 0, rem: 0, uncertain: 0 };
   const cycles = item.usageMinutes > 390 ? 5 : 4;
   const cycleLength = item.usageMinutes / cycles;
   let maskMinutes = 0;
@@ -33,12 +33,16 @@ export function estimateMockStages(item: NightListItem, sessions: Session[], ind
       stage = maskMinutes < 12 || (e + index * 7) % 193 < 3 ? "wake"
         : phase > 0.10 && phase < deepEnd ? "deep"
         : phase > remStart ? "rem" : "light";
+      const offset = t - start;
+      const confounded = events.some(event => ["obstructiveApnea", "centralApnea", "hypopnea"].includes(event.kind) && t >= wallSeconds(event.time) - event.value - 30 && t <= wallSeconds(event.time) + 90)
+        || leakBlocks.some(([a, b]) => offset >= a - 30 && offset <= b + 60);
+      if (confounded) stage = "uncertain";
       minutes[stage] += 0.5;
       maskMinutes += 0.5;
     }
     stages.push(stage);
   }
-  return { start: item.start!, epochSeconds: 30, stages, minutes, signalQuality: round(0.82 + (index % 7) * 0.02), estimatorVersion: 1 };
+  return { start: item.start!, epochSeconds: 30, stages, minutes, signalQuality: round(0.82 + (index % 7) * 0.02), confidence: { sleepWake: "moderate", rem: "low", deep: "veryLow" }, estimatorVersion: 3 };
 }
 
 export function computeMockScore(item: NightListItem, stages: SleepStageEstimate | null): SleepScore | null {
@@ -58,9 +62,9 @@ export function computeMockScore(item: NightListItem, stages: SleepStageEstimate
   }
   const wakePenalty = stages ? clamp((stages.minutes.wake / item.usageMinutes - 0.05) / 0.15 * 6, 6) : 0;
   add("continuity", "Unbroken sleep", clamp(15 - item.interruptions * 3 - wakePenalty, 15), 15, `${item.interruptions} mask-off ${item.interruptions === 1 ? "break interrupted" : "breaks interrupted"} this night.`);
-  if (stages) {
+  if (stages && stages.minutes.uncertain / item.usageMinutes <= 0.4) {
     const sleep = stages.minutes.light + stages.minutes.deep + stages.minutes.rem;
-    add("sleepStages", "Sleep stages (estimated)", 5 * Math.min(1, sleep > 0 ? stages.minutes.deep / sleep / 0.15 : 0) + 5 * Math.min(1, sleep > 0 ? stages.minutes.rem / sleep / 0.20 : 0), 10, `${Math.round(stages.minutes.deep + stages.minutes.rem)} minutes were estimated as deep or REM sleep.`);
+    add("sleepStages", "REM sleep (estimated, low confidence)", 10 * Math.min(1, sleep > 0 ? stages.minutes.rem / sleep / 0.20 : 0), 10, `${Math.round(stages.minutes.rem)} minutes were estimated as REM sleep. Deep sleep is not scored because it is the least reliable estimate.`);
   }
   const available = components.reduce((sum, c) => sum + c.maxPoints, 0);
   const total = Math.round(unroundedPoints / available * 100);
@@ -69,7 +73,7 @@ export function computeMockScore(item: NightListItem, stages: SleepStageEstimate
 
 export function nightTips(item: NightListItem, recent: NightListItem[] = [], prescriptionChanged = false): Tip[] {
   const tips: Tip[] = [];
-  const add = (id: string, severity: Tip["severity"], title: string, body: string, learnSlug: string) => tips.push({ id, severity, title, body, learnSlug, evidence: id === "ahi-watch" ? `AHI ${item.ahi?.toFixed(1)} events/hour` : id === "mask-fit" ? `${item.largeLeakMinutes ?? 0} minutes of large leak; extra leak P95 ${item.excessLeakP95 ?? "not recorded"} L/min` : id === "short-night" ? `${Math.round(item.usageMinutes)} minutes of use` : id === "interruptions" ? `${item.interruptions} mask-off breaks` : id === "central-watch" ? `${item.eventCounts.central} central events recorded` : "Prescription changed on this night", evidenceDates: [item.date] });
+  const add = (id: string, severity: Tip["severity"], title: string, body: string, learnSlug: string) => tips.push({ category: "therapy", id, severity, title, body, learnSlug, evidence: id === "ahi-watch" ? `AHI ${item.ahi?.toFixed(1)} events/hour` : id === "mask-fit" ? `${item.largeLeakMinutes ?? 0} minutes of large leak; extra leak P95 ${item.excessLeakP95 ?? "not recorded"} L/min` : id === "short-night" ? `${Math.round(item.usageMinutes)} minutes of use` : id === "interruptions" ? `${item.interruptions} mask-off breaks` : id === "central-watch" ? `${item.eventCounts.central} central events recorded` : "Prescription changed on this night", evidenceDates: [item.date] });
   const totalEvents = Object.values(item.eventCounts).reduce((a, b) => a + b, 0);
   if (item.eventCounts.central / (item.usageMinutes / 60) > 5 || (item.ahi != null && item.ahi > 5 && item.eventCounts.central > totalEvents / 2)) add("central-watch", "talk", "Discuss central breathing events", "Contact your clinician about the central breathing events recorded during therapy.", "centralApnea");
   if (item.ahi != null && item.ahi >= 5) {
@@ -81,5 +85,5 @@ export function nightTips(item: NightListItem, recent: NightListItem[] = [], pre
   if ((item.largeLeakMinutes ?? 0) / item.usageMinutes > 0.05 || (item.excessLeakP95 ?? 0) > 24) add("mask-fit", "watch", "Check your mask fit", "Check the fit of your mask and look for cushion wear. A comfortable seal helps therapy work as intended.", "excessLeak");
   if (item.interruptions >= 3) add("interruptions", "info", "Several mask-off breaks", "There were several breaks in therapy. Notice whether discomfort or your routine made it harder to keep the mask on.", "interruptions");
   if (prescriptionChanged) add("prescription-changed", "info", "Compare before and after", "Your prescription changed. Compare several nights before and after the change with your clinician.", "pressure");
-  return tips.length ? tips.slice(0, 4) : [{ id: "all-good", severity: "good", title: "Keep your routine going", body: "Your recorded therapy measures look steady. Keep using your mask whenever you sleep.", learnSlug: "sleepScore", evidence: `AHI ${item.ahi == null ? "not recorded" : item.ahi.toFixed(1) + " events/hour"}; ${Math.round(item.usageMinutes)} minutes of use`, evidenceDates: [item.date] }];
+  return tips.length ? tips.slice(0, 4) : [{ category: "therapy", id: "all-good", severity: "good", title: "Keep your routine going", body: "Your recorded therapy measures look steady. Keep using your mask whenever you sleep.", learnSlug: "sleepScore", evidence: `AHI ${item.ahi == null ? "not recorded" : item.ahi.toFixed(1) + " events/hour"}; ${Math.round(item.usageMinutes)} minutes of use`, evidenceDates: [item.date] }];
 }

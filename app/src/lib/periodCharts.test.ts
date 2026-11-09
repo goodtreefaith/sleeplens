@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { StageMinutes } from "../api/types";
 import { periodTickIndices, periodTitle, restorativePoints } from "./periodCharts";
-const stage = (deep: number, rem: number): StageMinutes => ({ deep, rem, light: 200, wake: 20 });
+const stage = (deep: number, rem: number): StageMinutes => ({ deep, rem, light: 200, wake: 20, uncertain: 0 });
 describe("period chart data", () => {
   it("names the latest periods and dates older ones", () => {
     expect(periodTitle("week", "2026-11-03", "2026-11-09", "2026-11-09")).toBe("This week");

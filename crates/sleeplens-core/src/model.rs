@@ -165,6 +165,8 @@ pub struct ScoreComponent {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Tip {
+    #[serde(default = "therapy_category")]
+    pub category: String,
     pub id: String,
     pub severity: String,
     pub title: String,
@@ -175,6 +177,22 @@ pub struct Tip {
     #[serde(default)]
     pub evidence_dates: Vec<String>,
 }
+fn therapy_category() -> String {
+    "therapy".into()
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PressureSummary {
+    pub setting_min: Option<f64>,
+    pub setting_max: Option<f64>,
+    pub avg_p90: Option<f64>,
+    pub nights_near_max: usize,
+    pub nights_near_min: usize,
+    pub avg_share_at_max_pct: Option<f64>,
+    pub events_at_min_pct: Option<f64>,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreviousPeriod {
@@ -199,6 +217,8 @@ pub struct ScorePoint {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PeriodSummary {
+    #[serde(default)]
+    pub pressure: Option<PressureSummary>,
     pub period: String,
     pub from: String,
     pub to: String,
