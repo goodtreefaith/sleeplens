@@ -1,4 +1,4 @@
-import type { SettingsSnapshot, TherapyModeLabel } from './types';
+import type { PressureUnitLabel, SettingsSnapshot, TherapyModeLabel } from './types';
 import { makeDataView, readTimestamp } from './time';
 
 export const BLOCK_SIZE = 128;
@@ -8,6 +8,15 @@ export const THERAPY_MODES: readonly TherapyModeLabel[] = ['CPAP', 'Auto CPAP', 
 
 export function therapyModeLabel(mode: number): TherapyModeLabel {
   return THERAPY_MODES[mode] ?? 'unknown';
+}
+
+/**
+ * Settings byte 0x1D to a unit label. 1 = hPa (Confirmed: the machine screen
+ * shows hPa with this byte). The cmH2O byte value has not been seen on a card
+ * yet, so every other value is 'unknown' rather than a guess.
+ */
+export function pressureUnitLabel(unit: number): PressureUnitLabel {
+  return unit === 1 ? 'hPa' : 'unknown';
 }
 
 /**
@@ -40,6 +49,7 @@ export function parseSettingsBlock(buf: Uint8Array, offset: number): SettingsSna
     autoOn: u8(0x19) !== 0,
     autoOff: u8(0x1a) !== 0,
     pressureUnit: u8(0x1d),
+    pressureUnitLabel: pressureUnitLabel(u8(0x1d)),
     raw: buf.slice(offset, offset + BLOCK_SIZE),
   };
 }

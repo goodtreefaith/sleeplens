@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildSyntheticCard, indexX10 } from '../tools/lib/synthetic';
+import { buildNightRow, formatNightTable, pressureUnitText } from '../tools/lib/night-table';
 import {
   detectAs2x,
   eventTypeForCode,
@@ -12,6 +13,7 @@ import {
   parseDatHeader,
   parseSettingsBlock,
   parseTherapyEntry,
+  pressureUnitLabel,
   summarizeDat,
 } from '../src/parsers/as2x';
 
@@ -77,7 +79,8 @@ describe('dat parsing', () => {
       rampMinutes: 15,
       autoOn: true,
       autoOff: false,
-      pressureUnit: 0,
+      pressureUnit: 1,
+      pressureUnitLabel: 'hPa',
     });
     expect(s.time?.iso).toBe('2030-01-15T22:30:00');
     const b = new Uint8Array(128);
@@ -85,6 +88,20 @@ describe('dat parsing', () => {
     b[2] = 7;
     expect(parseSettingsBlock(b, 0)!.modeLabel).toBe('unknown');
     expect(parseSettingsBlock(b.fill(0, 0, 2), 0)).toBeNull();
+  });
+
+  it('labels the pressure unit byte: 1 is hPa, anything else unknown', () => {
+    expect(pressureUnitLabel(1)).toBe('hPa');
+    for (const v of [0, 2, 0xff]) expect(pressureUnitLabel(v)).toBe('unknown');
+    const b = new Uint8Array(128);
+    b[0] = b[1] = 0xc5;
+    b[0x1d] = 0;
+    expect(parseSettingsBlock(b, 0)).toMatchObject({ pressureUnit: 0, pressureUnitLabel: 'unknown' });
+    b[0x1d] = 1;
+    expect(parseSettingsBlock(b, 0)).toMatchObject({ pressureUnit: 1, pressureUnitLabel: 'hPa' });
+    // Pressures stay numeric as stored, whatever the unit.
+    b.set([50, 0], 3);
+    expect(parseSettingsBlock(b, 0)!.startPressure).toBe(5);
   });
 
   it('maps device IDs to model names and formats versions like NeoRead', () => {
@@ -128,8 +145,10 @@ describe('dat parsing', () => {
     expect(first.time?.iso).toBe('2030-01-15T22:30:00');
     expect(first.weekday).toBe(1); // Tuesday
     expect(first.setPressure).toBe(5);
-    expect(first.leak).toBe(20);
-    expect(first.leakFlow).toBe(10); // slots 270-319: leakBase - 10 + (i % leakMod), +-1 alternating
+    expect(first.totalLeak).toBe(20); // slot 384
+    expect(first.excessLeak).toBe(10); // slots 270-319: leakBase - 10 + (i % leakMod), +-1 alternating
+    expect(first.leak).toBe(first.totalLeak); // deprecated aliases
+    expect(first.leakFlow).toBe(first.excessLeak);
     expect(first.snore).toBeGreaterThan(0);
     expect(first.waveforms!.setPressure.length).toBe(50);
     expect(first.waveforms!.setPressure[0]).toBe(5);
@@ -167,16 +186,21 @@ describe('dat parsing', () => {
     expect(s.start?.iso).toBe('2030-01-15T22:30:00');
     expect(s.end?.iso).toBe('2030-01-15T22:40:01');
     expect(s.pressure).toEqual({ min: 5, mean: 6.4, p90: 8, p95: 8, max: 8 });
-    expect(s.leak).toEqual({ median: 24, p95: 29, max: 29 });
-    // Leak flow 10-19 L/min, plus 90 s at 95 L/min (the large-leak window).
-    expect(s.leakFlow).toEqual({ median: 15, p95: 95, max: 95 });
-    expect(s.series!.leakFlow[450]).toBe(95);
-    expect(s.series!.leakFlow[3]).toBe(13);
+    expect(s.totalLeak).toEqual({ median: 24, p95: 29, max: 29 });
+    // Excess leak 10-19 L/min, plus 90 s at 95 L/min (the large-leak window).
+    expect(s.excessLeak).toEqual({ median: 15, p95: 95, max: 95 });
+    // Deprecated aliases carry the same values.
+    expect(s.leak).toEqual(s.totalLeak);
+    expect(s.leakFlow).toEqual(s.excessLeak);
+    expect(s.series!.excessLeak[450]).toBe(95);
+    expect(s.series!.excessLeak[3]).toBe(13);
+    expect(s.series!.leakFlow).toBe(s.series!.excessLeak);
+    expect(s.series!.leak).toBe(s.series!.totalLeak);
     expect(s.series!.snore.length).toBe(600);
     expect(s.series!.pressure.length).toBe(600);
     expect(s.series!.pressure[0]).toBe(5);
     expect(s.series!.pressure[599]).toBe(8);
-    expect(s.series!.leak[3]).toBe(23);
+    expect(s.series!.totalLeak[3]).toBe(23);
   });
 
   it('summarizes night 2 without a series', () => {
@@ -185,8 +209,10 @@ describe('dat parsing', () => {
     expect(s.usageMinutes).toBe(12);
     expect(s.end?.iso).toBe('2030-01-16T23:17:00');
     expect(s.pressure).toEqual({ min: 5, mean: 6, p90: 7.5, p95: 7.5, max: 7.5 });
-    expect(s.leak).toEqual({ median: 35, p95: 41, max: 41 });
-    expect(s.leakFlow).toEqual({ median: 25, p95: 31, max: 31 });
+    expect(s.totalLeak).toEqual({ median: 35, p95: 41, max: 41 });
+    expect(s.excessLeak).toEqual({ median: 25, p95: 31, max: 31 });
+    expect(s.leak).toEqual(s.totalLeak);
+    expect(s.leakFlow).toEqual(s.excessLeak);
   });
 });
 
@@ -447,5 +473,68 @@ describe('generator and parser agree', () => {
 
   it('detects the generated card', () => {
     expect(detectAs2x([...card.keys()]).nights).toHaveLength(3);
+  });
+});
+
+describe('inspector night table', () => {
+  const bkp = parseBkp(BKP);
+  const sum1 = summarizeDat(N1, { includeSeries: false });
+  const session1 = bkp.sessions[0]!;
+
+  it('prefers the bkp session summary for usage, mean and P90', () => {
+    // Make the summary differ from the .dat, as on the real card (6.2 on screen, 6.3 from the .dat).
+    const session = { ...session1, usageMinutes: 9, pressure: { ...session1.pressure, mean: 6.2, p90: 7.5 }, largeLeakMinutes: 2.5 };
+    const r = buildNightRow({ date: '20300115', file: '<SERIAL>203001/20300115.dat' }, sum1, session, { obstructiveApnea: 1 });
+    expect(r).toMatchObject({
+      usageMinutes: 9,
+      usageSource: 'summary',
+      pressureMean: 6.2,
+      pressureP90: 7.5,
+      pressureSource: 'summary',
+      datUsageMinutes: 10,
+      datPressureMean: 6.4,
+      datPressureP90: 8,
+      excessLeakMedian: 15,
+      totalLeakMedian: 24,
+      leakMedian: 24, // deprecated keys kept for --json callers
+      leakFlowMedian: 15,
+      largeLeakMinutes: 2.5,
+    });
+  });
+
+  it('falls back to the .dat values and marks them', () => {
+    const r = buildNightRow({ date: '20300115', file: 'x.dat' }, sum1, null, null);
+    expect(r).toMatchObject({
+      usageMinutes: 10,
+      usageSource: 'dat',
+      pressureMean: 6.4,
+      pressureP90: 8,
+      pressureSource: 'dat',
+      largeLeakMinutes: null,
+    });
+    const lines = formatNightTable([r], 'hPa');
+    expect(lines[1]).toContain('0:10*');
+    expect(lines[1]).toContain('6.4*');
+    expect(lines[1]).toContain('8.0*');
+    expect(lines.at(-1)).toMatch(/^\* no bkp session summary/);
+  });
+
+  it('lays out excess leak and large-leak minutes, with hPa units', () => {
+    const r = buildNightRow({ date: '20300115', file: 'x.dat' }, sum1, session1, { obstructiveApnea: 1, centralApnea: 1, level: 1 });
+    const lines = formatNightTable([r], 'hPa');
+    expect(lines[0]).toContain('excess leak');
+    expect(lines[0]).toContain('large leak min');
+    expect(lines[0]).not.toMatch(/\bleak\s+AHI/);
+    expect(lines[1]).toContain('15.0'); // excess leak median, not the slot-384 24
+    expect(lines[1]).toContain('1.5'); // large-leak minutes from 0x52
+    expect(lines[1]).not.toContain('*');
+    expect(lines[1]).toContain('1 OA + 1 CA');
+    expect(lines.some((l) => l.startsWith('pressure in hPa'))).toBe(true);
+    expect(lines.some((l) => l.startsWith('*'))).toBe(false);
+    // Columns line up with the header.
+    expect(lines[1]!.indexOf('16.4') + 4).toBe(lines[0]!.indexOf('AHI') + 3);
+    expect(formatNightTable([r], 'unknown').some((l) => l.startsWith('pressure in card units'))).toBe(true);
+    expect(pressureUnitText('hPa')).toBe('hPa');
+    expect(pressureUnitText(null)).toBe('card units');
   });
 });

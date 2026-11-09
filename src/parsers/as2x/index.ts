@@ -1,6 +1,6 @@
 export * from './types';
 export * from './time';
-export { parseSettingsBlock, therapyModeLabel, THERAPY_MODES, BLOCK_SIZE } from './settings';
+export { parseSettingsBlock, therapyModeLabel, pressureUnitLabel, THERAPY_MODES, BLOCK_SIZE } from './settings';
 export {
   parseDatHeader,
   iterateDatRecords,

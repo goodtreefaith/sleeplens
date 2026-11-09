@@ -23,6 +23,14 @@ export interface LocalTime {
 export type TherapyModeLabel = 'CPAP' | 'Auto CPAP' | 'AUTOS' | 'S' | 'ST' | 'unknown';
 
 /**
+ * Pressure unit (settings byte 0x1D). 1 = hPa, confirmed against the machine's
+ * own screen. The byte value for cmH2O has not been seen on a card yet, so any
+ * other value is 'unknown'. Pressures are stored the same way either way
+ * (x0.1), and 1 hPa is about 1.02 cmH2O, so the numbers can be shown as is.
+ */
+export type PressureUnitLabel = 'hPa' | 'unknown';
+
+/**
  * A `C5 C5` therapy-parameter block. Offsets are relative to the block start
  * and decoded as NeoRead's ReadTheropyParams does (Confirmed (NeoRead)).
  */
@@ -56,8 +64,14 @@ export interface SettingsSnapshot {
   autoOn: boolean;
   /** Byte 0x1A != 0. */
   autoOff: boolean;
-  /** Byte 0x1D: pressure unit (cmH2O or hPa). The value-to-unit mapping is Unresolved, so it stays raw. */
+  /** Byte 0x1D: pressure unit, raw. 1 = hPa (Confirmed against the machine screen); see `pressureUnitLabel`. */
   pressureUnit: number;
+  /**
+   * `pressureUnit` as a label: 1 -> 'hPa', anything else -> 'unknown' (the
+   * cmH2O byte value has not been seen yet). Pressure fields stay numeric as
+   * stored; hPa and cmH2O differ by about 2 %, so they display as the same number.
+   */
+  pressureUnitLabel: PressureUnitLabel;
   /** The full 128-byte block, copied. */
   raw: Uint8Array;
 }
@@ -105,7 +119,10 @@ export interface DatWaveforms {
   snore: Float32Array;
   /** 50 Hz patient flow, slots 220-269, L/min (value - 500). Confirmed (NeoRead "Flow"). */
   patientFlow: Float32Array;
-  /** 50 Hz leak flow, slots 270-319, L/min as stored (NeoRead graph range 0-50). Confirmed (NeoRead). */
+  /**
+   * 50 Hz leak flow, slots 270-319, L/min as stored (NeoRead graph range 0-50). Confirmed (NeoRead).
+   * Looks like EXCESS (unintentional) leak above the mask's vent flow (Likely); see `DatSummary.excessLeak`.
+   */
   leakFlow: Float32Array;
   /** 50 Hz total flow, slots 320-369, L/min (value - 500). Likely; NeoRead skips this channel. */
   totalFlow: Float32Array;
@@ -125,9 +142,20 @@ export interface DatRecord {
   maskPressure: number;
   /** Max minus min of patient flow within the second, L/min (Likely). */
   flowAmplitude: number;
-  /** Slot 384, L/min (Likely). Which leak figure matches the machine's own is unverified. */
+  /**
+   * Slot 384, L/min. Looks like TOTAL leak, including the mask's built-in vent
+   * flow (Likely): its median sits around 24-29 L/min on a real card.
+   */
+  totalLeak: number;
+  /** @deprecated alias of `totalLeak` (slot 384). */
   leak: number;
-  /** Mean of slots 270-319 over the second, L/min. NeoRead's leak flow. */
+  /**
+   * Mean of slots 270-319 over the second, L/min (NeoRead's leak flow). Looks like
+   * EXCESS (unintentional) leak above the vent flow (Likely): median 0 on a well-sealed night.
+   * This is the figure to show for mask seal.
+   */
+  excessLeak: number;
+  /** @deprecated alias of `excessLeak` (slots 270-319). */
   leakFlow: number;
   /** Mean of slots 170-219 over the second, raw snore units. */
   snore: number;
@@ -156,12 +184,29 @@ export interface DatSummary {
   sessions: ActiveInterval[];
   /** Per-second set pressure statistics, cmH2O. Percentiles are nearest-rank. */
   pressure: { min: number; mean: number; p90: number; p95: number; max: number };
-  /** Slot 384, L/min. Median is the nearest-rank (lower) median. */
-  leak: { median: number; p95: number; max: number };
-  /** Per-second leak flow (slots 270-319, NeoRead's leak flow), L/min, nearest-rank on 0.1 steps. */
-  leakFlow: { median: number; p95: number; max: number };
+  /**
+   * TOTAL leak (slot 384, includes the mask's vent flow; Likely), L/min.
+   * Median is the nearest-rank (lower) median.
+   */
+  totalLeak: LeakStats;
+  /** @deprecated alias of `totalLeak` (slot 384). */
+  leak: LeakStats;
+  /**
+   * EXCESS (unintentional) leak above the vent flow (slots 270-319, NeoRead's
+   * leak flow; Likely), per-second means, L/min, nearest-rank on 0.1 steps.
+   * The preferred leak figure for mask seal.
+   */
+  excessLeak: LeakStats;
+  /** @deprecated alias of `excessLeak` (slots 270-319). */
+  leakFlow: LeakStats;
   /** One value per second per channel; absent when `includeSeries: false`. */
   series?: DatSeries;
+}
+
+export interface LeakStats {
+  median: number;
+  p95: number;
+  max: number;
 }
 
 /** One uninterrupted stretch of therapy inside a night file. */
@@ -176,7 +221,13 @@ export interface ActiveInterval {
 export interface DatSeries {
   hz: 1;
   pressure: Float32Array;
+  /** TOTAL leak, slot 384, L/min (Likely). */
+  totalLeak: Float32Array;
+  /** @deprecated alias of `totalLeak` (the same array). */
   leak: Float32Array;
+  /** EXCESS leak, slots 270-319 mean, L/min (Likely). */
+  excessLeak: Float32Array;
+  /** @deprecated alias of `excessLeak` (the same array). */
   leakFlow: Float32Array;
   snore: Float32Array;
   flowAmplitude: Float32Array;
@@ -201,7 +252,13 @@ export interface SessionSummary {
   pressure: { /** @deprecated use `startPressure` */ min: number; mean: number; p90: number };
   /** 0x5E x0.1 (NeoRead "MaxP"). Likely the observed maximum target pressure, NOT the configured maximum. */
   observedMaxPressure: number;
-  /** 0x52 x0.1: minutes with leak above 90 L/min (NeoRead "LeakMinutes (>90 LPM)"). */
+  /**
+   * 0x52 x0.1: minutes with leak above 90 L/min (NeoRead "LeakMinutes (>90 LPM)").
+   * The machine's screen labels this value "LEAK90 (l/min)", but it does not
+   * behave like a 90th percentile: on a night whose leak p90 was 4 (excess) and
+   * 33 (total) L/min, screen and card both said 0. It reads as minutes with
+   * leak above 90 L/min (Likely), so the field keeps this name.
+   */
   largeLeakMinutes: number;
   /** 0x56 x0.1: snore index (NeoRead "SNI"). */
   snoreIndex: number;

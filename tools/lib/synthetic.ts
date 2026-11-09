@@ -193,7 +193,7 @@ function settingsBlock(st: Stamp): Uint8Array {
   b[0x18] = 15; // ramp minutes
   b[0x19] = 1; // auto on
   b[0x1a] = 0; // auto off disabled
-  b[0x1d] = 0; // pressure unit (raw)
+  b[0x1d] = 1; // pressure unit: 1 = hPa, as on the real card
   b[0x20] = 0x01;
   putStamp(dv, 0x21, st);
   b[0x2e] = 3; // constant 3 on real cards; NOT the humidifier level

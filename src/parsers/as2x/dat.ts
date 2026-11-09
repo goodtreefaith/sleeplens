@@ -29,11 +29,12 @@ export const SLOT = {
   /** NeoRead "Snore", raw. */
   snore: 170,
   patientFlow: 220,
-  /** NeoRead "LeakFlow", L/min as stored. */
+  /** NeoRead "LeakFlow", L/min as stored. Looks like EXCESS (unintentional) leak (Likely). */
   leakFlow: 270,
   totalFlow: 320,
   elapsed: 379,
   state: 381,
+  /** Looks like TOTAL leak, including the mask's vent flow (Likely). */
   leak: 384,
 } as const;
 
@@ -144,7 +145,9 @@ export function* iterateDatRecords(
       setPressure: setSum / WAVE_SAMPLES / 10,
       maskPressure: maskSum / WAVE_SAMPLES / 10,
       flowAmplitude: flowMax - flowMin,
+      totalLeak: u16(SLOT.leak),
       leak: u16(SLOT.leak),
+      excessLeak: leakFlowSum / WAVE_SAMPLES,
       leakFlow: leakFlowSum / WAVE_SAMPLES,
       snore: snoreSum / WAVE_SAMPLES,
       elapsedCounter: u16(SLOT.elapsed),
@@ -203,16 +206,21 @@ export function summarizeDat(buf: Uint8Array, options: SummarizeOptions = {}): D
   const header = parseDatHeader(buf);
   const includeSeries = options.includeSeries ?? true;
   const n = header.recordCount;
-  const series: DatSeries | undefined = includeSeries
-    ? {
-        hz: 1,
-        pressure: new Float32Array(n),
-        leak: new Float32Array(n),
-        leakFlow: new Float32Array(n),
-        snore: new Float32Array(n),
-        flowAmplitude: new Float32Array(n),
-      }
-    : undefined;
+  let series: DatSeries | undefined;
+  if (includeSeries) {
+    const totalLeak = new Float32Array(n);
+    const excessLeak = new Float32Array(n);
+    series = {
+      hz: 1,
+      pressure: new Float32Array(n),
+      totalLeak,
+      leak: totalLeak,
+      excessLeak,
+      leakFlow: excessLeak,
+      snore: new Float32Array(n),
+      flowAmplitude: new Float32Array(n),
+    };
+  }
 
   const pressureHist = new Uint32Array(2048); // tenths of cmH2O
   const leakHist = new Uint32Array(65536);
@@ -237,8 +245,8 @@ export function summarizeDat(buf: Uint8Array, options: SummarizeOptions = {}): D
   for (const rec of iterateDatRecords(buf)) {
     if (series) {
       series.pressure[rec.index] = rec.setPressure;
-      series.leak[rec.index] = rec.leak;
-      series.leakFlow[rec.index] = rec.leakFlow;
+      series.totalLeak[rec.index] = rec.totalLeak;
+      series.excessLeak[rec.index] = rec.excessLeak;
       series.snore[rec.index] = rec.snore;
       series.flowAmplitude[rec.index] = rec.flowAmplitude;
     }
@@ -258,16 +266,26 @@ export function summarizeDat(buf: Uint8Array, options: SummarizeOptions = {}): D
     pressureSum += rec.setPressure;
     if (rec.setPressure < pMin) pMin = rec.setPressure;
     if (rec.setPressure > pMax) pMax = rec.setPressure;
-    leakHist[rec.leak]!++;
-    if (rec.leak > lMax) lMax = rec.leak;
-    const lfTenths = Math.min(Math.max(0, Math.round(rec.leakFlow * 10)), leakFlowHist.length - 1);
+    leakHist[rec.totalLeak]!++;
+    if (rec.totalLeak > lMax) lMax = rec.totalLeak;
+    const lfTenths = Math.min(Math.max(0, Math.round(rec.excessLeak * 10)), leakFlowHist.length - 1);
     leakFlowHist[lfTenths]!++;
-    if (rec.leakFlow > lfMax) lfMax = rec.leakFlow;
+    if (rec.excessLeak > lfMax) lfMax = rec.excessLeak;
   }
 
   if (last) closeInterval(last);
   const end = last ? addSeconds(last, 1) : null;
   const spanSeconds = sessions.reduce((sum, x) => sum + (x.end.epochSec - x.start.epochSec), 0);
+  const totalLeak = {
+    median: histPercentile(leakHist, valid, 0.5),
+    p95: histPercentile(leakHist, valid, 0.95),
+    max: lMax,
+  };
+  const excessLeak = {
+    median: histPercentile(leakFlowHist, valid, 0.5) / 10,
+    p95: histPercentile(leakFlowHist, valid, 0.95) / 10,
+    max: round1(lfMax),
+  };
   return {
     serial: header.serial,
     start: first,
@@ -285,16 +303,10 @@ export function summarizeDat(buf: Uint8Array, options: SummarizeOptions = {}): D
       p95: histPercentile(pressureHist, valid, 0.95) / 10,
       max: valid ? round1(pMax) : 0,
     },
-    leak: {
-      median: histPercentile(leakHist, valid, 0.5),
-      p95: histPercentile(leakHist, valid, 0.95),
-      max: lMax,
-    },
-    leakFlow: {
-      median: histPercentile(leakFlowHist, valid, 0.5) / 10,
-      p95: histPercentile(leakFlowHist, valid, 0.95) / 10,
-      max: round1(lfMax),
-    },
+    totalLeak,
+    leak: { ...totalLeak },
+    excessLeak,
+    leakFlow: { ...excessLeak },
     ...(series ? { series } : {}),
   };
 }
