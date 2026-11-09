@@ -20,6 +20,9 @@ fn evidence(mut tip: Tip, text: String, dates: impl IntoIterator<Item = String>)
     tip.evidence_dates.truncate(5);
     tip
 }
+fn night_count(count: usize) -> String {
+    format!("{count} night{}", if count == 1 { "" } else { "s" })
+}
 fn rank(t: &Tip) -> u8 {
     match t.severity.as_str() {
         "talk" => 0,
@@ -193,7 +196,11 @@ pub fn period_tips(summary: &PeriodSummary, nights: &[Night]) -> Vec<Tip> {
         .zip(summary.previous.avg_sleep_score)
     {
         let delta = now - old;
-        let text = format!("Average score {now:.1}, compared with {old:.1} in the previous period; {} scored nights in this period", selected.iter().filter(|n| n.list.sleep_score.is_some()).count());
+        let scored = selected
+            .iter()
+            .filter(|n| n.list.sleep_score.is_some())
+            .count();
+        let text = format!("Average score {now:.1}, compared with {old:.1} in the previous period; {scored} scored night{} in this period", if scored == 1 { "" } else { "s" });
         let score_dates = dates(|n| n.list.sleep_score.is_some());
         if delta >= 5. {
             tips.push(count_evidence(tip("score-improved","good","Your average score rose","Your average estimated sleep score rose by at least 5 points from the previous period.","sleepScore"), text, score_dates));
@@ -203,11 +210,11 @@ pub fn period_tips(summary: &PeriodSummary, nights: &[Night]) -> Vec<Tip> {
     }
     let short = dates(|n| n.list.usage_minutes < 240.);
     if !short.is_empty() {
-        tips.push(count_evidence(tip("short-night","watch","Aim for the whole night","Some nights in this period had less than 4 hours of use. Keep your mask on for the whole night when you can; Auto ON can help if it is already enabled.","validNight"), format!("{} nights with less than 4 hours of use", short.len()), short));
+        tips.push(count_evidence(tip("short-night","watch","Aim for the whole night","Some nights in this period had less than 4 hours of use. Keep your mask on for the whole night when you can; Auto ON can help if it is already enabled.","validNight"), format!("{} with less than 4 hours of use", night_count(short.len())), short));
     }
     let mask = dates(mask_issue);
     if !mask.is_empty() {
-        tips.push(count_evidence(tip("mask-fit","watch","Check your mask fit","Leaks were above the usual guide on some nights in this period. Check your mask fit and look for cushion wear.","excessLeak"), format!("{} nights with large leak over 5% or excess-leak p95 over 24 L/min", mask.len()), mask));
+        tips.push(count_evidence(tip("mask-fit","watch","Check your mask fit","Leaks were above the usual guide on some nights in this period. Check your mask fit and look for cushion wear.","excessLeak"), format!("{} with large leak over 5% or excess-leak p95 over 24 L/min", night_count(mask.len())), mask));
     }
     let high = dates(|n| n.list.ahi.is_some_and(|v| v > 5.));
     let severe = dates(|n| n.list.ahi.is_some_and(|v| v > 15.));
@@ -231,7 +238,10 @@ pub fn period_tips(summary: &PeriodSummary, nights: &[Night]) -> Vec<Tip> {
     if !severe.is_empty() || recurring.is_some() {
         let (text, relevant) = if !severe.is_empty() {
             (
-                format!("AHI above 15 on {} nights in this period", severe.len()),
+                format!(
+                    "AHI above 15 on {} in this period",
+                    night_count(severe.len())
+                ),
                 severe,
             )
         } else {
@@ -251,8 +261,8 @@ pub fn period_tips(summary: &PeriodSummary, nights: &[Night]) -> Vec<Tip> {
         ));
     } else if high.len() >= 3 || summary.avg_ahi.is_some_and(|v| v > 5.) {
         let text = format!(
-            "AHI above 5 on {} nights in this period; average AHI {}",
-            high.len(),
+            "AHI above 5 on {} in this period; average AHI {}",
+            night_count(high.len()),
             summary
                 .avg_ahi
                 .map_or_else(|| "not recorded".into(), |v| format!("{v:.1}"))
@@ -261,19 +271,19 @@ pub fn period_tips(summary: &PeriodSummary, nights: &[Night]) -> Vec<Tip> {
     }
     let central = dates(central_issue);
     if !central.is_empty() {
-        tips.push(count_evidence(tip("central-apnea","talk","Discuss central events","Contact your clinician about the central breathing events recorded in this period.","centralApnea"), format!("{} nights with central apnea index above 5 or most events central and AHI above 5", central.len()), central));
+        tips.push(count_evidence(tip("central-apnea","talk","Discuss central events","Contact your clinician about the central breathing events recorded in this period.","centralApnea"), format!("{} with central apnea index above 5 or most events central and AHI above 5", night_count(central.len())), central));
     }
     let interrupted = dates(|n| n.list.interruptions >= 3);
     if !interrupted.is_empty() {
-        tips.push(count_evidence(tip("interruptions","info","Several mask-off breaks","Some nights in this period had several mask-off breaks. Compare those nights and consider what made you take the mask off.","interruptions"), format!("{} nights with at least 3 mask-off breaks", interrupted.len()), interrupted));
+        tips.push(count_evidence(tip("interruptions","info","Several mask-off breaks","Some nights in this period had several mask-off breaks. Compare those nights and consider what made you take the mask off.","interruptions"), format!("{} with at least 3 mask-off breaks", night_count(interrupted.len())), interrupted));
     }
     let changed = dates(|n| n.list.prescription_changed);
     if !changed.is_empty() {
         tips.push(count_evidence(
             prescription_tip(),
             format!(
-                "{} nights with a recorded mode or pressure prescription change",
-                changed.len()
+                "{} with a recorded mode or pressure prescription change",
+                night_count(changed.len())
             ),
             changed,
         ));
@@ -284,8 +294,9 @@ pub fn period_tips(summary: &PeriodSummary, nights: &[Night]) -> Vec<Tip> {
         count_evidence(
             all_good(),
             format!(
-                "{} nights used out of {} days in this period",
-                summary.nights, summary.days_in_range
+                "{} used out of {} days in this period",
+                night_count(summary.nights),
+                summary.days_in_range
             ),
             all_dates(),
         ),
@@ -355,6 +366,78 @@ mod tests {
         let central = night_tips(&n, &[]);
         assert_eq!(central[0].id, "central-apnea");
         assert!(central[0].evidence.as_ref().unwrap().contains("5.1"));
+    }
+    #[test]
+    fn period_count_evidence_uses_singular_and_plural_nights() {
+        type Case = (&'static str, fn(&mut Night));
+        let cases: [Case; 7] = [
+            ("short-night", |n| n.list.usage_minutes = 100.),
+            ("mask-fit", |n| n.list.excess_leak_p95 = Some(25.)),
+            ("central-apnea", |n| n.summary.cai = Some(6.)),
+            ("interruptions", |n| n.list.interruptions = 3),
+            ("prescription-changed", |n| {
+                n.list.prescription_changed = true
+            }),
+            ("ahi-talk", |n| n.list.ahi = Some(16.)),
+            ("ahi-watch", |n| n.list.ahi = Some(6.)),
+        ];
+        for count in [1, 2] {
+            let expected = if count == 1 { "1 night" } else { "2 nights" };
+            for (id, change) in cases {
+                let mut records = nights(&vec![1.; count]);
+                for n in &mut records {
+                    change(n);
+                }
+                let mut summary = summary();
+                summary.compliance_pct = 80.;
+                if id == "ahi-watch" {
+                    summary.avg_ahi = Some(6.);
+                }
+                let tips = period_tips(&summary, &records);
+                let text = tips
+                    .iter()
+                    .find(|t| t.id == id)
+                    .unwrap()
+                    .evidence
+                    .as_ref()
+                    .unwrap();
+                assert!(text.contains(expected), "{id}: {text}");
+                assert!(!text.contains("1 nights"), "{id}: {text}");
+            }
+        }
+    }
+    #[test]
+    fn score_and_fallback_evidence_use_singular_and_plural_nights() {
+        for count in [1, 2] {
+            let mut records = nights(&vec![1.; count]);
+            for n in &mut records {
+                n.list.sleep_score = Some(80);
+            }
+            let mut summary = summary();
+            summary.compliance_pct = 80.;
+            summary.nights = count;
+            let tips = period_tips(&summary, &records);
+            assert_eq!(tips[0].id, "all-good");
+            assert_eq!(
+                tips[0].evidence.as_deref(),
+                Some(format!("{} used out of 7 days in this period", night_count(count)).as_str())
+            );
+            summary.previous.avg_sleep_score = Some(70.);
+            let tips = period_tips(&summary, &records);
+            let text = tips
+                .iter()
+                .find(|t| t.id == "score-improved")
+                .unwrap()
+                .evidence
+                .as_ref()
+                .unwrap();
+            let expected = if count == 1 {
+                "1 scored night in"
+            } else {
+                "2 scored nights in"
+            };
+            assert!(text.contains(expected), "{text}");
+        }
     }
     #[test]
     fn period_watch_requires_pattern_or_elevated_average() {

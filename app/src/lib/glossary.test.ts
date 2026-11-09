@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { describe, expect, it } from "vitest";
 import contract from "../../../docs/APP_CONTRACT.md?raw";
-import { GLOSSARY, glossaryEntry, HELP_KEYS } from "./glossary";
+import { GLOSSARY, GLOSSARY_GROUPS, glossaryEntry, HELP_KEYS } from "./glossary";
 
 describe("shared glossary", () => {
   it("covers every help key in the app contract", () => {
@@ -16,4 +16,10 @@ describe("shared glossary", () => {
     expect(glossaryEntry("leak")?.body.join(" ")).toContain("95th percentile");
     expect(new Set(GLOSSARY.map((entry) => entry.id)).size).toBe(GLOSSARY.length);
   });
+});
+
+it("indexes every glossary entry once in the grouped Learn sections", () => {
+  const keys = GLOSSARY_GROUPS.flatMap(group => group.keys);
+  expect(keys.slice().sort()).toEqual(GLOSSARY.map(entry => entry.id).sort());
+  expect(new Set(keys).size).toBe(keys.length);
 });

@@ -4,6 +4,8 @@ import type { CardCandidate, ImportProgress, ImportResult } from "../api/types";
 import type { Go } from "../App";
 import { Icon } from "../components/Icon";
 import { useData, errorText } from "../lib/data";
+import type { MonthStatus } from "../lib/importMonths";
+import "../score-import.css";
 import { monthYear, plural, shortDateY } from "../lib/format";
 
 const STEPS: { phase: ImportProgress["phase"]; label: string }[] = [
@@ -76,6 +78,20 @@ export function ImportScreen({ go }: { go: Go }) {
 
   const card = cards[0];
   const progress = imp.progress;
+  const activeCandidate = cards.find(candidate => candidate.label === imp.source || candidate.path === imp.source);
+  const months = [...new Set([...(activeCandidate?.months ?? []), ...Object.keys(imp.months)])].sort();
+  const monthStatus = (month: string): MonthStatus => {
+    if (imp.phase === "finished" && imp.result?.status === "ok") {
+      const r = imp.result;
+      return r.nightsSkipped > 0 && !r.nightsAdded && !r.nightsUpdated && !r.nightsFailed.length ? "Skipped — already imported" : "Done";
+    }
+    return imp.months[month] ?? "Waiting";
+  };
+  const monthList = months.length ? <ul className="import-months" aria-label="Month folder progress">{months.map(month => {
+    const status = monthStatus(month);
+    const failed = imp.result?.nightsFailed.filter(night => night.date.startsWith(month)).length ?? 0;
+    return <li key={month} className={status === "Reading…" ? "reading" : status === "Done" ? "done" : ""}><b>{monthYear(`${month}-01`)}</b><span><Icon name={status === "Done" || status.startsWith("Skipped") ? "check" : status === "Reading…" ? "dot" : "none"} />{status}{failed > 0 ? ` · ${plural(failed, "night")} could not be read` : ""}</span></li>;
+  })}</ul> : <p className="quiet">Month folders will appear as nights are found.</p>;
   const stepIndex = progress ? ORDER.indexOf(progress.phase) : 0;
   const isFirst = (info?.nightCount ?? 0) === 0;
   const pctDone = importPercent(progress);
@@ -126,6 +142,7 @@ export function ImportScreen({ go }: { go: Go }) {
                 ? `${progress.done} of ${progress.total} nights${progress.currentDate ? ` · ${shortDateY(progress.currentDate)}` : ""}`
                 : progress?.message ?? "Starting…"}
             </p>
+            {monthList}
             <ol className="steps">
               {STEPS.map((s, i) => {
                 const state = stepIndex > i ? "ok" : stepIndex === i ? "now" : "";
@@ -141,7 +158,7 @@ export function ImportScreen({ go }: { go: Go }) {
           </section>
         ) : null}
 
-        {imp.phase === "finished" && imp.result ? <Result result={imp.result} first={imp.first} go={go} onAgain={resetImport} /> : null}
+        {imp.phase === "finished" && imp.result ? <><Result result={imp.result} first={imp.first} go={go} onAgain={resetImport} />{months.length > 0 && <section className="card import-card" aria-label="Month folder results">{monthList}</section>}</> : null}
       </section>
 
       <aside className="aside" aria-label="About importing">

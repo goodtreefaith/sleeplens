@@ -108,7 +108,7 @@ export function App() {
           ) : screen === "night" ? (
             <NightScreen date={route.date} go={go} theme={theme} />
           ) : screen === "trends" ? (
-            <TrendsScreen go={go} />
+            <TrendsScreen route={route} go={go} />
           ) : screen === "settings" ? (
             <SettingsScreen go={go} themePref={themePref} setThemePref={setThemePref} />
           ) : (

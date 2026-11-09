@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { wallSeconds } from "../lib/dates";
+import { addDays, wallSeconds } from "../lib/dates";
 import { computePeriodSummary, computeTrends, createMockApi } from "./mock";
 import type { ImportProgress, ImportResult } from "./types";
 
@@ -109,14 +109,17 @@ describe("v2 periods", () => {
     const nights = await api.listNights();
     for (const [period, length] of [["week", 7], ["month", 30], ["6months", 182], ["year", 365]] as const) {
       const p = await api.periodSummary(period);
-      expect(p.daysInRange).toBe(length);
-      expect(p.scoreSeries).toHaveLength(length);
+      const actualLength = Math.min(length, 124);
+      expect(p.daysInRange).toBe(actualLength);
+      expect(p.clampedToFirstNight).toBe(length > 124);
+      expect(p.headline).toContain("You used therapy");
+      expect(p.scoreSeries).toHaveLength(actualLength);
       expect(p.scoreSeries[0]!.date).toBe(p.from);
-      expect(p.scoreSeries[length - 1]!.date).toBe(p.to);
+      expect(p.scoreSeries[actualLength - 1]!.date).toBe(p.to);
       const ns = nights.filter(n => n.date >= p.from && n.date <= p.to);
       expect(p.nights).toBe(ns.length);
       expect(p.avgUsageMinutes).toBeCloseTo(ns.reduce((s,n) => s + n.usageMinutes, 0) / ns.length);
-      expect(p.compliancePct).toBeCloseTo(ns.filter(n => n.usageMinutes > 240).length / length * 100);
+      expect(p.compliancePct).toBeCloseTo(ns.filter(n => n.usageMinutes > 240).length / actualLength * 100);
       expect(p.bestNight!.sleepScore).toBe(Math.max(...ns.map(n => n.sleepScore!)));
       expect(p.worstNight!.sleepScore).toBe(Math.min(...ns.map(n => n.sleepScore!)));
       expect(p.tips.length).toBeLessThanOrEqual(5);
@@ -124,8 +127,9 @@ describe("v2 periods", () => {
     const p = await api.periodSummary("month", "2026-08-25");
     expect(p.scoreSeries.some(n => n.sleepScore == null && n.usageMinutes === 0)).toBe(true);
     const previous = await api.periodSummary("month", "2026-07-26");
-    expect(p.previous.avgSleepScore).toBe(previous.avgSleepScore);
-    expect(p.previous.compliancePct).toBe(previous.compliancePct);
+    expect(previous.clampedToFirstNight).toBe(true);
+    expect(p.previous.avgSleepScore).toBeNull();
+    expect(p.previous.compliancePct).toBeNull();
   });
 
   it("keeps no-data averages null and averages only nights with a stage estimate", async () => {
@@ -147,8 +151,8 @@ describe("v2 periods", () => {
     const scores = ns.flatMap(n => n.sleepScore == null ? [] : [n.sleepScore]);
     expect(Math.min(...scores)).toBeGreaterThanOrEqual(55);
     expect(Math.min(...scores)).toBeLessThanOrEqual(65);
-    expect(Math.max(...scores)).toBeLessThanOrEqual(92);
-    expect(Math.max(...scores)).toBeGreaterThanOrEqual(88);
+    expect(Math.max(...scores)).toBeLessThanOrEqual(98);
+    expect(Math.max(...scores)).toBeGreaterThanOrEqual(95);
     const interrupted = ns.find(n => n.interruptions > 0 && n.ahi != null)!;
     const d = await api.nightDetail(interrupted.date);
     expect(d.score!.total).toBe(d.sleepScore);
@@ -200,4 +204,47 @@ it("only marks mode and pressure prescription changes", async () => {
     { date: ns[2]!.date, time: null, settings, changed: ["comfortLevel"] }
   ]);
   expect(result.points.map(p => p.prescriptionChanged)).toEqual([false, true, false]);
+});
+
+it("clamps periods to the first imported night and suppresses incomplete previous periods", async () => {
+  const ns = await createMockApi({ preloaded: true }).listNights();
+  const first = ns[0]!.date;
+  const p = computePeriodSummary(ns, "month", addDays(first, 3));
+  expect(p.from).toBe(first);
+  expect(p.clampedToFirstNight).toBe(true);
+  expect(p.daysInRange).toBe(4);
+  expect(p.scoreSeries).toHaveLength(4);
+  expect(p.compliancePct).toBe(p.validNights / 4 * 100);
+  expect(Object.values(p.previous)).toEqual([null, null, null, null]);
+  expect(p.tips.some(t => t.id.startsWith("score-"))).toBe(false);
+  expect(p.tips.every(t => t.evidence && t.evidenceDates.length <= 5)).toBe(true);
+});
+
+it("links period prescription evidence to its actual change night", async () => {
+  const ns = await createMockApi({ preloaded: true }).listNights();
+  const history = await createMockApi({ preloaded: true }).settingsHistory();
+  const change = history.find(h => h.changed.includes("maxPressure"))!;
+  const p = computePeriodSummary(ns, "month", addDays(change.date, 25));
+  const tip = p.tips.find(t => t.id === "prescription-changed")!;
+  expect(tip.evidenceDates).toEqual([change.date]);
+  expect(tip.evidence).toBe("Mode or pressure settings changed on 1 night");
+});
+
+
+it.each([1, 2])("pluralises period evidence for %i matching nights", async count => {
+  const base = (await createMockApi({ preloaded: true }).listNights())[0]!;
+  const cases = [
+    { id: "short-night", changes: { usageMinutes: 100 } },
+    { id: "mask-fit", changes: { excessLeakP95: 25 } },
+    { id: "interruptions", changes: { interruptions: 3 } },
+    { id: "central-watch", changes: { eventCounts: { central: 100, obstructive: 0, hypopnea: 0 } } },
+    { id: "ahi-watch", changes: { ahi: 6 } }
+  ];
+  for (const { id, changes } of cases) {
+    const records = Array.from({ length: count }, (_, i) => ({ ...base, date: addDays("2026-11-01", i), usageMinutes: 420, ahi: 1, largeLeakMinutes: 0, excessLeakP95: 0, interruptions: 0, eventCounts: { central: 0, obstructive: 1, hypopnea: 0 }, ...changes }));
+    const p = computePeriodSummary(records, "week", records[count - 1]!.date, () => null, []);
+    const tip = p.tips.find(t => t.id === id)!;
+    expect(tip.evidence).toContain(count === 1 ? "1 night" : "2 nights");
+    expect(tip.evidence).not.toContain("1 nights");
+  }
 });

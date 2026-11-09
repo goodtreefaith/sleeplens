@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { Trends } from "../api/types";
+import type { Route } from "../lib/route";
 import type { Go } from "../App";
 import { LineChart, UsageCalendar } from "../charts/TrendCharts";
 import { HelpTip } from "../components/HelpTip";
@@ -28,12 +29,14 @@ function readRange(): RangeKey {
   try { const v = localStorage.getItem(RANGE_KEY); return v && v in RANGE_LABEL ? (v as RangeKey) : "M"; } catch { return "M"; }
 }
 
-export function TrendsScreen({ go }: { go: Go }) {
+export function TrendsScreen({ go, route }: { go: Go; route?: Route }) {
   const { info, history } = useData();
-  const [range, setRange] = useState<RangeKey>(readRange);
+  const routeRange: RangeKey | undefined = route?.period ? ({ week: "W", month: "M", "6months": "6M", year: "Y", all: "All" } as const)[route.period] : undefined;
+  const [range, setRange] = useState<RangeKey>(() => routeRange ?? readRange());
+  useEffect(() => { if (routeRange) setRange(routeRange); }, [routeRange]);
   const [t, setT] = useState<Trends | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const first = info?.firstDate, last = info?.lastDate;
+  const first = info?.firstDate, last = route?.date ?? info?.lastDate;
   const unit = unitLabel(info?.device?.pressureUnit ?? history[0]?.settings.pressureUnit);
 
   useEffect(() => {
@@ -49,19 +52,18 @@ export function TrendsScreen({ go }: { go: Go }) {
   const pick = (d: string) => go({ screen: "night", date: d });
   const clamped = range !== "All" && t && daysInclusive(t.from, t.to) < RANGE_DAYS[range];
   const changes = history.filter((h) => h.changed.length > 0 && t && h.date >= t.from && h.date <= t.to);
-  const prescriptionDescriptions = Object.fromEntries(changes.map((c) => [c.date, c.changed.filter((k) => ["mode", "modeLabel", "startPressure", "minPressure", "maxPressure", "fixedPressure"].includes(k)).map((k) => `${SETTING_LABEL[k]}: ${String(c.settings[k])}`).join(", ")]));
+  const prescriptionDescriptions = Object.fromEntries(changes.map((c) => [c.date, c.changed.filter((k) => ["mode", "modeLabel", "startPressure", "minPressure", "maxPressure", "fixedPressure"].includes(k)).map((k) => `${SETTING_LABEL[k]}: ${String(c.settings[k])}${/Pressure$/.test(k) ? ` ${unit}` : ""}`).join(", ")]));
 
   return (
     <section className="trends-v2" aria-labelledby="h-trends">
       <div className="screen-h">
         <h1 id="h-trends">Trends</h1>
-        <p className="sub">{t ? `${shortDateY(t.from)} to ${shortDateY(t.to)} · ${plural(t.nights, "night")} with use` : ""}{clamped ? " · since your first night" : ""}</p>
-        <span className="grow" />
-        <div className="seg-ctl" role="group" aria-label="Time range">
+        <p className="sub">Detailed charts{t ? " · " : ""}{t ? `${shortDateY(t.from)} to ${shortDateY(t.to)} · ${plural(t.nights, "night")} with use` : ""}{clamped ? " · since your first night" : ""}</p>
+        <div className="trends-range"><div className="seg-ctl" role="group" aria-label="Time range">
           {(Object.keys(RANGE_LABEL) as RangeKey[]).map((k) => (
-            <button key={k} type="button" aria-pressed={range === k} onClick={() => setRange(k)} title={RANGE_LABEL[k]}>{k}</button>
+            <button key={k} type="button" aria-pressed={range === k} onClick={() => setRange(k)} title={RANGE_LABEL[k]}>{RANGE_LABEL[k]}</button>
           ))}
-        </div>
+        </div></div>
       </div>
       {err ? <p className="error-box" role="alert">{err}</p> : null}
       {!t ? <div className="card loading" role="status">Loading…</div> : (
@@ -69,6 +71,7 @@ export function TrendsScreen({ go }: { go: Go }) {
           <div className="trend-figs">
             <div className="kpis">
               <section className="card kpi" aria-labelledby="k-comp">
+              <HelpTip term="compliance" variant="info" />
                 <h2 id="k-comp">Used over 4 hours <HelpTip term="compliance" /></h2>
                 <span className="pct">{Math.round(t.compliancePct)}%</span>
                 <p className="quiet">{t.validNights} of {t.daysInRange} days</p>
@@ -84,11 +87,13 @@ export function TrendsScreen({ go }: { go: Go }) {
                 <p className="quiet">per night with use</p>
               </section>
               <section className="card kpi" aria-labelledby="k-ahi">
+              <HelpTip term="ahi" variant="info" />
                 <h2 id="k-ahi">Events per hour <HelpTip term="ahi" /></h2>
                 <span className="pct">{r1(t.avgAhi)}</span>
                 {t.avgAhi != null ? <StatusPill s={ahiStatus(t.avgAhi)} word={ahiStatus(t.avgAhi) === "good" ? "Normal range" : ahiStatus(t.avgAhi) === "watch" ? "Watch" : "Talk to your clinician"} /> : <StatusPill s="none" word="Not recorded" />}
               </section>
               <section className="card kpi" aria-labelledby="k-leak">
+              <HelpTip term="excessLeak" variant="info" />
                 <h2 id="k-leak">Extra leak, 95th percentile <HelpTip term="excessLeak" /></h2>
                 <span className="pct">{r1(t.avgExcessLeakP95)}<small className="quiet"> L/min</small></span>
                 <p className="quiet">Pressure high (90%): {r1(t.avgPressureP90)} {unit} <HelpTip term="pressureP90" /></p>
@@ -105,6 +110,7 @@ export function TrendsScreen({ go }: { go: Go }) {
           </div>
 
           <section className="card" aria-labelledby="hm-h">
+              <HelpTip term="hours" variant="info" />
             <div className="card-h"><h2 id="hm-h">Hours each night</h2><p>One square per day. Select a night to open it.</p></div>
             <div className="heat-row">
               <UsageCalendar points={t.points} from={t.from} to={t.to} last={last} onPick={pick} />
@@ -122,21 +128,25 @@ export function TrendsScreen({ go }: { go: Go }) {
           <p className="prescription-legend quiet"><span aria-hidden="true">┊</span> Thin dashed lines mark a prescription change. Focus or hover a marker for the date and settings.</p>
           <div className="multiples">
             <section className="card mult" aria-labelledby="m-score">
+              <HelpTip term="sleepScore" variant="info" />
               <h3 id="m-score">Sleep score <HelpTip term="sleepScore" /></h3>
               <p className="val">{r1(t.avgSleepScore)} <small>/ 100 average, estimated</small></p>
-              <LineChart changeDescriptions={prescriptionDescriptions} points={t.points} from={t.from} to={t.to} value={(p) => p.sleepScore} max={100} unit="points" aria="Estimated sleep score each night" onPick={pick} />
+              <LineChart changeDescriptions={prescriptionDescriptions} points={t.points} from={t.from} to={t.to} value={(p) => p.sleepScore} max={100} scoreGuides unit="points" aria="Estimated sleep score each night" onPick={pick} />
             </section>
             <section className="card mult" aria-labelledby="m-ahi">
+              <HelpTip term="ahi" variant="info" />
               <h3 id="m-ahi">Events per hour (AHI) <HelpTip term="ahi" /></h3>
               <p className="val">{r1(t.avgAhi)} <small>average</small></p>
-              <LineChart changeDescriptions={prescriptionDescriptions} points={t.points} from={t.from} to={t.to} value={(p) => p.ahi} guide={5} guideLabel="5 = top of normal range" unit="events/h" aria="Events per hour each night" onPick={pick} />
+              <LineChart changeDescriptions={prescriptionDescriptions} points={t.points} from={t.from} to={t.to} value={(p) => p.ahi} typicalMax={5} typicalLabel="Typical range: under 5 events/h" unit="events/h" aria="Events per hour each night" onPick={pick} />
             </section>
             <section className="card mult" aria-labelledby="m-leak">
+              <HelpTip term="excessLeak" variant="info" />
               <h3 id="m-leak">Extra leak, 95th percentile <HelpTip term="excessLeak" /></h3>
               <p className="val">{r1(t.avgExcessLeakP95)} <small>L/min average</small></p>
-              <LineChart changeDescriptions={prescriptionDescriptions} points={t.points} from={t.from} to={t.to} value={(p) => p.excessLeakP95} unit="L/min" aria="95th percentile extra leak each night" onPick={pick} />
+              <LineChart changeDescriptions={prescriptionDescriptions} points={t.points} from={t.from} to={t.to} value={(p) => p.excessLeakP95} typicalMax={24} typicalLabel="Typical range: under 24 L/min" unit="L/min" aria="95th percentile extra leak each night" onPick={pick} />
             </section>
             <section className="card mult" aria-labelledby="m-p90">
+              <HelpTip term="pressureP90" variant="info" />
               <h3 id="m-p90">Pressure, high (90%) <HelpTip term="pressureP90" /></h3>
               <p className="val">{r1(t.avgPressureP90)} <small>{unit} average</small></p>
               <LineChart changeDescriptions={prescriptionDescriptions} points={t.points} from={t.from} to={t.to} value={(p) => p.pressureP90} unit={unit} aria="High pressure each night" onPick={pick} />
@@ -145,19 +155,21 @@ export function TrendsScreen({ go }: { go: Go }) {
 
           <div className="bottom-grid">
             <section className="card" aria-labelledby="ch-h">
-              <div className="card-h"><h2 id="ch-h">Settings changes</h2><p>From the machine's settings log</p></div>
+              <HelpTip term="pressure" variant="info" />
+              <div className="card-h"><h2 id="ch-h">Settings changes <HelpTip term="pressure" /></h2><p>From the machine's settings log</p></div>
               {changes.length ? (
                 <ul className="changes">
                   {changes.map((c) => (
                     <li key={c.date + (c.time ?? "")}>
                       <b>{shortDateY(c.date)}{c.time ? `, ${c.time.slice(11, 16)}` : ""}</b>
-                      {c.changed.filter((k) => k !== "mode").map((k, i) => <span key={k}>{i ? " · " : ""}{SETTING_LABEL[k]}: {String(c.settings[k])}{/Pressure$/.test(k) ? ` ${unit}` : ""}{/Pressure$/.test(k) ? <HelpTip term="pressure" /> : k === "rampMinutes" ? <HelpTip term="ramp" /> : k === "comfortLevel" ? <HelpTip term="comfort" /> : null}</span>)}
+                      {c.changed.filter((k) => k !== "mode").map((k, i) => <span key={k}>{i ? " · " : ""}{SETTING_LABEL[k]}: {String(c.settings[k])}{/Pressure$/.test(k) ? ` ${unit}` : ""}</span>)}
                     </li>
                   ))}
                 </ul>
               ) : <p className="quiet">No settings changes recorded.</p>}
             </section>
             <section className="card" aria-labelledby="dn-h">
+              <HelpTip term="computed" variant="info" />
               <div className="card-h"><h2 id="dn-h">About this data</h2></div>
               <ul className="notes">
                 <li className="note"><Icon name="info" /><span>A valid night is more than 4 hours of use, the same rule the machine uses. <HelpTip term="validNight" /></span></li>

@@ -45,13 +45,16 @@ const LEGACY: { id: string; term: string; body: string[]; also?: string }[] = [
 export const HELP_KEYS = ["ahi", "obstructiveApnea", "centralApnea", "hypopnea", "apneaIndex", "excessLeak", "largeLeak", "pressureP90", "pressure", "ramp", "comfort", "validNight", "compliance", "sleepScore", "sleepStages", "deepSleep", "remSleep", "lightSleep", "wake", "interruptions"] as const;
 export type GlossaryKey = typeof HELP_KEYS[number];
 const additions: { id: string; term: string; body: string[]; also?: string }[] = [
+  { id: "machineSummary", term: "Machine summary", body: ["The machine’s stored overnight measurements are shown here. When a stored summary is unavailable, SleepLens calculates available values from the night file. Missing measurements stay marked as not recorded."] },
+  { id: "nightSettings", term: "Settings this night", body: ["The mode, pressure range and comfort settings recorded by your machine for this night. A change marker shows a recorded setting change. Discuss treatment changes with your clinician."] },
+  { id: "nightCharts", term: "Through the night", body: ["These charts share one time axis. Zooming or choosing an event keeps the breathing, leak, pressure and estimated stage views aligned. Gaps mean no recorded measurement. Sleep stages are estimates from breathing, not a sleep study."] },
   { id: "apneaIndex", term: "Apnea index", body: ["The number of complete breathing pauses per hour of machine use. Unlike AHI, this count does not include shallow breathing, called hypopneas."] },
   { id: "excessLeak", term: "Extra leak", body: ["Air escaping beyond the mask's intended vent, often around the cushion or through an open mouth. The 95th percentile is the level extra leak stayed at or below for 95% of recorded time; it helps show leaks that a median can hide."] },
   { id: "largeLeak", term: "Large leak", body: ["Time when the machine recorded a large amount of escaping air, over 90 L/min on this device. Breathing event counts may be less reliable during these periods."] },
   { id: "pressureP90", term: "P90 pressure", body: ["The pressure the machine stayed at or below for 90% of recorded time. It describes the higher pressures used overnight, rather than the single highest reading."] },
   { id: "validNight", term: "Valid night", body: ["A night with more than 4 hours of machine use, following this machine's rule. Exactly 4 hours does not qualify; this is a counting rule, not a full night's sleep goal."] },
   { id: "compliance", term: "Compliance", body: ["The percentage of calendar days with a valid night of more than 4 hours of use. Days without recorded use still count in the denominator; the 70% guide is a common administrative guide, not a personal treatment goal."] },
-  { id: "sleepScore", term: "Sleep score", body: ["An estimated score out of 100 combining hours used, breathing events, mask seal, interruptions and estimated sleep stages. Missing components are excluded and the remaining points are scaled to 100, so it is a general summary rather than a clinical sleep-quality measurement."] },
+  { id: "sleepScore", term: "Sleep score", body: ["An estimated score out of 100 summarising the time you used therapy, breathing events, mask seal, interruptions and estimated sleep stages. It is a general guide to your recorded night.", "The five parts and their maximum points are Hours used 30, Breathing events 30, Mask seal 15, Unbroken sleep 15, and Sleep stages 10. Missing parts are excluded and available points are scaled to 100. The ring keeps each part’s original weight; its colour matches the labelled contributor below.", "Contributor words reflect points earned: Optimal at 90% or more, Good at 70%, Fair at 45%, and Pay attention below 45%. The three-step meter groups these as Optimal, Sufficient and Poor.", "Stages are estimated from breathing, not brain activity or a sleep study. The total is estimated too, and cannot diagnose sleep quality. A score needs at least 30 minutes of use."] },
   { id: "sleepStages", term: "Estimated sleep stages", body: ["SleepLens estimates stages from breathing patterns in 30-second intervals while the mask is on. A CPAP does not measure brain activity, so these estimates can differ from a sleep study and cannot diagnose sleep stages."] },
   { id: "deepSleep", term: "Deep sleep", body: ["A stage of non-REM sleep usually more common earlier in the night. SleepLens infers it from breathing, so the amount is an estimate rather than a measurement of brain activity."] },
   { id: "remSleep", term: "REM sleep", body: ["Rapid eye movement sleep is a stage often associated with dreaming and tends to last longer toward morning. SleepLens estimates it from breathing patterns and does not measure eye movements."] },
@@ -74,3 +77,13 @@ export const GLOSSARY = [...LEGACY.map((entry) => {
 }), ...additions].filter((entry, i, all) => all.findIndex((x) => x.id === entry.id) === i);
 // Keep historic Learn links working while all visible explanations share one source.
 export const glossaryEntry = (key: string) => GLOSSARY.find((entry) => entry.id === resolveGlossaryKey(key));
+
+
+/** Every glossary entry belongs to exactly one Learn section. */
+export const GLOSSARY_GROUPS = [
+  { id: "therapy", title: "Your therapy numbers", keys: ["hours", "validNight", "compliance", "computed", "interruptions", "machineSummary", "nightCharts"] },
+  { id: "breathing", title: "Breathing events", keys: ["ahi", "apneaIndex", "obstructiveApnea", "centralApnea", "hypopnea"] },
+  { id: "mask", title: "Mask & leak", keys: ["excessLeak", "largeLeak"] },
+  { id: "sleep", title: "Sleep stages & score", keys: ["sleepScore", "sleepStages", "wake", "lightSleep", "deepSleep", "remSleep"] },
+  { id: "settings", title: "Settings", keys: ["pressure", "pressureP90", "units", "ramp", "comfort", "humidifier", "nightSettings"] }
+];

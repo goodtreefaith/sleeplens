@@ -1,15 +1,17 @@
-import { useEffect, useId, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useLayoutEffect, useId, useRef, useState } from "react";
 import type { Go } from "../App";
 import { glossaryEntry, resolveGlossaryKey } from "../lib/glossary";
 import "../v2.css";
+import "../score-import.css";
 
-export function HelpTip({ term, go }: { term: string; go?: Go }) {
+const useClientLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+export function HelpTip({ term, go, variant = "question" }: { term: string; go?: Go; variant?: "question" | "info" }) {
   const entry = glossaryEntry(term);
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const button = useRef<HTMLButtonElement>(null);
-  const popover = useRef<HTMLDivElement>(null);
+  const popover = useRef<HTMLSpanElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
   const id = useId();
   function cancel() { clearTimeout(timer.current); }
@@ -18,27 +20,38 @@ export function HelpTip({ term, go }: { term: string; go?: Go }) {
   function show(focus = false) {
     cancel();
     const r = button.current?.getBoundingClientRect();
-    if (r) setPosition({ left: Math.min(Math.max(12, r.left - 120), window.innerWidth - Math.min(330, window.innerWidth - 24) - 12), top: Math.max(12, Math.min(r.bottom + 8, window.innerHeight - 280)) });
+    if (r) setPosition({ left: Math.min(Math.max(12, r.left - 120), window.innerWidth - Math.min(330, window.innerWidth - 24) - 12), top: r.bottom + 8 });
     setOpen(true);
     if (focus) requestAnimationFrame(() => popover.current?.querySelector<HTMLButtonElement>("button")?.focus());
   }
+  useClientLayoutEffect(() => {
+    if (!open || !button.current || !popover.current) return;
+    const trigger = button.current.getBoundingClientRect();
+    const height = popover.current.getBoundingClientRect().height;
+    const below = window.innerHeight - trigger.bottom - 20;
+    const above = trigger.top - 20;
+    const flip = height > below && above > below;
+    const maxHeight = Math.max(40, flip ? above : below);
+    popover.current.style.maxHeight = `${maxHeight}px`;
+    setPosition(previous => ({ ...previous, top: flip ? Math.max(12, trigger.top - Math.min(height, maxHeight) - 8) : trigger.bottom + 8 }));
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); close(true); } };
     const outside = (e: PointerEvent) => { if (!button.current?.contains(e.target as Node) && !popover.current?.contains(e.target as Node)) close(); };
     const blur = (e: FocusEvent) => { if (!button.current?.contains(e.target as Node) && !popover.current?.contains(e.target as Node)) close(); };
-    const scroll = () => close();
+    const scroll = (event: Event) => { if (event.target instanceof Node && popover.current?.contains(event.target)) return; close(); };
     document.addEventListener("keydown", key); document.addEventListener("pointerdown", outside); document.addEventListener("focusin", blur); window.addEventListener("scroll", scroll, true); window.addEventListener("resize", scroll);
     return () => { document.removeEventListener("keydown", key); document.removeEventListener("pointerdown", outside); document.removeEventListener("focusin", blur); window.removeEventListener("scroll", scroll, true); window.removeEventListener("resize", scroll); };
   }, [open]);
   useEffect(() => () => cancel(), []);
   if (!entry) return null;
-  return <span className="help-wrap" onMouseEnter={() => { cancel(); timer.current = setTimeout(() => show(), 350); }} onMouseLeave={() => { cancel(); timer.current = setTimeout(hoverClose, 250); }}>
-    <button ref={button} type="button" className="help-tip" aria-label={`What is ${entry.term}?`} aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => open ? close(true) : show(true)}>?</button>
-    {open && createPortal(<div ref={popover} id={id} role="dialog" aria-label={entry.term} className="help-pop" style={{ ...position, maxHeight: `calc(100vh - ${position.top + 12}px)` }} onMouseEnter={cancel} onMouseLeave={() => { timer.current = setTimeout(hoverClose, 250); }}>
-      <div className="help-head"><strong>{entry.term}</strong><button type="button" aria-label="Close explanation" onClick={() => close(true)}>×</button></div>
-      <p>{entry.body.join(" ")}</p>
-      <a href={`#learn/${resolveGlossaryKey(term)}`} onClick={(e) => { if (go) { e.preventDefault(); go({ screen: "learn", term: resolveGlossaryKey(term) }); } close(); }}>More in Learn</a>
-    </div>, document.body)}
+  return <span className={`help-wrap${variant === "info" ? " card-help" : ""}`} onMouseEnter={() => { cancel(); timer.current = setTimeout(() => show(), 350); }} onMouseLeave={() => { cancel(); timer.current = setTimeout(hoverClose, 250); }}>
+    <button ref={button} type="button" className="help-tip" aria-label={variant === "info" ? `About ${entry.term.toLowerCase()}` : `What is ${entry.term}?`} aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => open ? close(true) : show(true)}>{variant === "info" ? "i" : "?"}</button>
+    {open && <span ref={popover} id={id} role="region" aria-label={entry.term} className="help-pop" style={position} onMouseEnter={cancel} onMouseLeave={() => { timer.current = setTimeout(hoverClose, 250); }}>
+      <span className="help-head"><strong>{variant === "info" ? `About ${entry.term.toLowerCase()}` : entry.term}</strong><button type="button" aria-label="Close explanation" onClick={() => close(true)}>×</button></span>
+      <span className="help-body">{entry.body.join(" ")}</span>
+      <a href={`#learn/${resolveGlossaryKey(term)}`} onClick={(e) => { if (go) { e.preventDefault(); go({ screen: "learn", term: resolveGlossaryKey(term) }); } close(); }}>{term === "sleepScore" ? "About the sleep score" : "More in Learn"}</a>
+    </span>}
   </span>;
 }

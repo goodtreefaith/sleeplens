@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import uPlot from "uplot";
-import type { NightDetail, PressureUnit, SleepStage } from "../api/types";
+import type { NightDetail, PressureUnit } from "../api/types";
+import { Hypnogram, type HypnogramScale } from "../components/SleepStages";
 import { HelpTip } from "../components/HelpTip";
 import { EVENT_STYLE, Icon, type MarkerKind, shapePath, Swatch } from "../components/Icon";
 import { wallSeconds } from "../lib/dates";
@@ -9,15 +10,7 @@ import { cssVar } from "../lib/theme";
 
 export interface Zoom { min: number; max: number }
 
-export function stageRuns(stages: SleepStage[]): { stage: SleepStage; first: number; end: number }[] {
-  const runs: { stage: SleepStage; first: number; end: number }[] = [];
-  stages.forEach((stage, i) => {
-    const previous = runs[runs.length - 1];
-    if (previous?.stage === stage) previous.end = i + 1;
-    else runs.push({ stage, first: i, end: i + 1 });
-  });
-  return runs;
-}
+export { stageRuns } from "../lib/stages";
 
 interface Props {
   detail: NightDetail;
@@ -27,7 +20,12 @@ interface Props {
   onZoom: (z: Zoom | null) => void;
 }
 
-const AXIS_W = 84;
+export const NIGHT_CHART_AXIS_WIDTH = 84;
+export const NIGHT_CHART_PADDING: [number, number, number, number] = [8, 12, 0, 0];
+
+export function nightHypnogramScale(plot: Pick<uPlot, "bbox" | "scales">, pixelRatio: number): HypnogramScale {
+  return { min: plot.scales.x!.min!, max: plot.scales.x!.max!, left: plot.bbox.left / pixelRatio, right: (plot.bbox.left + plot.bbox.width) / pixelRatio };
+}
 const MARKER_KINDS: MarkerKind[] = ["obstructiveApnea", "centralApnea", "hypopnea", "largeLeak"];
 
 /** Resolves var(--x) to a colour value uPlot (canvas) can use. */
@@ -56,12 +54,13 @@ export function NightCharts({ detail, unit, theme, zoom, onZoom }: Props) {
   );
   const breathing = useMemo(() => markers.filter((m) => m.kind !== "largeLeak").map((m) => m.t), [markers]);
 
-  const refs = [useRef<HTMLDivElement>(null), useRef<HTMLDivElement>(null), useRef<HTMLDivElement>(null), useRef<HTMLDivElement>(null), useRef<HTMLDivElement>(null)];
+  const refs = [useRef<HTMLDivElement>(null), useRef<HTMLDivElement>(null), useRef<HTMLDivElement>(null), useRef<HTMLDivElement>(null)];
   const plots = useRef<uPlot[]>([]);
   const syncing = useRef(false);
   const onZoomRef = useRef(onZoom);
   onZoomRef.current = onZoom;
   const [readout, setReadout] = useState<string>("");
+  const [stageScale, setStageScale] = useState<HypnogramScale>();
   const u = unitLabel(unit);
 
   useEffect(() => {
@@ -124,10 +123,16 @@ export function NightCharts({ detail, unit, theme, zoom, onZoom }: Props) {
       onZoomRef.current(full ? null : { min, max });
     };
 
+    const syncStageScale = (p: uPlot) => {
+      const next = nightHypnogramScale(p, devicePixelRatio);
+      setStageScale(old => old && Object.keys(next).every(key => old[key as keyof HypnogramScale] === next[key as keyof HypnogramScale]) ? old : next);
+    };
+
     const base = (height: number, showX: boolean): Omit<uPlot.Options, "series"> => ({
       width,
       height,
       tzDate,
+      padding: NIGHT_CHART_PADDING,
       legend: { show: false },
       cursor: { sync: { key: syncKey, setSeries: false }, drag: { x: true, y: false, setScale: true }, points: { size: 6 } },
       scales: { x: { time: true, min: x[0], max: x[x.length - 1] } },
@@ -135,7 +140,7 @@ export function NightCharts({ detail, unit, theme, zoom, onZoom }: Props) {
         showX
           ? { stroke: muted, grid: { stroke: grid, width: 1 }, ticks: { stroke: grid }, font, values: (_p, splits) => splits.map(clockFmt) }
           : { stroke: muted, grid: { stroke: grid, width: 1 }, ticks: { show: false }, size: 4, values: (_p, splits) => splits.map(() => "") },
-        { stroke: muted, grid: { stroke: grid, width: 1 }, ticks: { show: false }, font, size: AXIS_W }
+        { stroke: muted, grid: { stroke: grid, width: 1 }, ticks: { show: false }, font, size: NIGHT_CHART_AXIS_WIDTH }
       ],
       hooks: { setScale: [propagate] },
       plugins: [eventLines, wheelZoom]
@@ -173,11 +178,14 @@ export function NightCharts({ detail, unit, theme, zoom, onZoom }: Props) {
       scales: { x: { time: true, min: x[0], max: x[x.length - 1] }, y: { range: [-0.5, 3.5] } },
       axes: [
         { stroke: muted, grid: { stroke: grid, width: 1 }, ticks: { stroke: grid }, font, values: (_p, splits) => splits.map(clockFmt) },
-        { stroke: muted, grid: { show: false }, ticks: { show: false }, font, size: AXIS_W, splits: () => [3, 2, 1, 0], values: () => ["Obstructive", "Central", "Hypopnea", "Large leak"] }
+        { stroke: muted, grid: { show: false }, ticks: { show: false }, font, size: NIGHT_CHART_AXIS_WIDTH, splits: () => [3, 2, 1, 0], values: () => ["Obstructive", "Central", "Hypopnea", "Large leak"] }
       ],
       series: [{}, { show: false }],
       plugins: [wheelZoom, {
         hooks: {
+          ready: syncStageScale,
+          setSize: syncStageScale,
+          setScale: syncStageScale,
           draw: (p: uPlot) => {
             const ctx = p.ctx;
             const r = 5 * devicePixelRatio;
@@ -199,60 +207,13 @@ export function NightCharts({ detail, unit, theme, zoom, onZoom }: Props) {
       }]
     };
 
-    const stageOpts: uPlot.Options = {
-      ...base(170, false),
-      scales: { x: { time: true, min: x[0], max: x[x.length - 1] }, y: { range: [-0.5, 3.5] } },
-      axes: [
-        { stroke: muted, grid: { stroke: grid, width: 1 }, ticks: { show: false }, size: 4, values: (_p, splits) => splits.map(() => "") },
-        { stroke: muted, grid: { show: false }, ticks: { show: false }, font, size: AXIS_W, splits: () => [0, 1, 2, 3], values: () => ["Deep", "Light", "REM", "Wake"] }
-      ],
-      series: [{}, { show: false }],
-      plugins: [wheelZoom, { hooks: { draw: (p: uPlot) => {
-        const stages = detail.stages;
-        if (!stages) return;
-        const ctx = p.ctx;
-        const start = wallSeconds(stages.start);
-        const levels = { deep: 0, light: 1, rem: 2, wake: 3 };
-        const colors = { deep: "--accent", light: "--leak-line", rem: "--ev2", wake: "--watch" };
-        const ratio = devicePixelRatio;
-        ctx.save();
-        ctx.beginPath(); ctx.rect(p.bbox.left, p.bbox.top, p.bbox.width, p.bbox.height); ctx.clip();
-        stageRuns(stages.stages).forEach(({ stage, first, end }) => {
-          const a = start + first * stages.epochSeconds;
-          const b = start + end * stages.epochSeconds;
-          if (b < p.scales.x!.min! || a > p.scales.x!.max!) return;
-          const left = p.valToPos(a, "x", true), right = p.valToPos(b, "x", true);
-          if (stage === "noData") {
-            ctx.fillStyle = grid; ctx.globalAlpha = 0.5;
-            ctx.fillRect(left, p.bbox.top, Math.max(1, right - left), p.bbox.height);
-            ctx.globalAlpha = 1;
-            return;
-          }
-          const cy = p.valToPos(levels[stage], "y", true);
-          ctx.fillStyle = cssVar(colors[stage]);
-          ctx.fillRect(left, cy - 9 * ratio, Math.max(1, right - left), 18 * ratio);
-          ctx.strokeStyle = cssVar("--surface"); ctx.globalAlpha = 0.65; ctx.lineWidth = ratio;
-          for (let px = left; px < right; px += 7 * ratio) {
-            ctx.beginPath();
-            if (stage === "wake") { ctx.arc(px + 3 * ratio, cy, ratio, 0, 2 * Math.PI); }
-            else if (stage === "light") { ctx.moveTo(px, cy); ctx.lineTo(Math.min(right, px + 7 * ratio), cy); }
-            else { ctx.moveTo(px, cy + 9 * ratio); ctx.lineTo(Math.min(right, px + 7 * ratio), cy - 9 * ratio); if (stage === "deep") { ctx.moveTo(px, cy - 9 * ratio); ctx.lineTo(Math.min(right, px + 7 * ratio), cy + 9 * ratio); } }
-            ctx.stroke();
-          }
-          ctx.globalAlpha = 1;
-        });
-        ctx.restore();
-      } } }]
-    };
-
     const make = (opts: uPlot.Options, ys: (number | null)[], el: HTMLDivElement) => new uPlot(opts, [x, ys] as uPlot.AlignedData, el);
     const nulls = new Array<number | null>(n).fill(null);
     plots.current = [
       make(pressureOpts, series.pressure, els[0]!),
       make(leakOpts, series.excessLeak, els[1]!),
       make(flowOpts, series.flowAmplitude, els[2]!),
-      make(laneOpts, nulls, els[3]!),
-      make(stageOpts, nulls, els[4]!)
+      make(laneOpts, nulls, els[3]!)
     ];
 
     const ro = new ResizeObserver(() => {
@@ -278,33 +239,30 @@ export function NightCharts({ detail, unit, theme, zoom, onZoom }: Props) {
     p.setScale("x", { min, max });
   }, [zoom, x]);
 
-  const rows: { label: string; sub: string; ref: RefObject<HTMLDivElement>; help?: string }[] = [
+  const rows: { label: string; sub: string; ref?: RefObject<HTMLDivElement>; help?: string }[] = [
     { label: "Pressure", sub: u, help: "pressure", ref: refs[0]! },
     { label: "Extra leak", sub: "L/min, beyond the vent", help: "excessLeak", ref: refs[1]! },
     { label: "Flow amplitude", sub: "L/min, size of each breath", ref: refs[2]! },
-    { label: "Sleep stages", sub: detail.stages ? "Estimated from breathing, not a sleep study" : "Not recorded. Re-read the card to add stages.", help: "sleepStages", ref: refs[4]! },
+    { label: "Sleep stages", sub: detail.stages ? "Estimated from breathing, not a sleep study. Breathing-based estimates often under-count deep and REM sleep; a low number isn't by itself a sign of a problem." : "Not recorded. Re-read the card to add stages.", help: "sleepStages" },
     { label: "Events", sub: "each mark is one event", ref: refs[3]! }
   ];
 
   return (
     <div>
-      <div className="chart-tools">
-        <div className="legend" aria-label="Legend">
+      <div className="chart-tools unified-chart-tools">
+        <div className="legend" aria-label="Events and estimated sleep stages">
           {MARKER_KINDS.map((k) => <span key={k}><Swatch kind={k} />{EVENT_STYLE[k].short} <HelpTip term={k} /></span>)}
-          <span><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1v12" stroke="var(--ev1)" strokeOpacity=".5" strokeWidth="2" /></svg>Breathing event time (on all charts)</span>
+          <span><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1v12" stroke="var(--ev1)" strokeOpacity=".5" strokeWidth="2" /></svg>Event time</span>
+
         </div>
-        <span className="grow" />
-        <button className="btn" type="button" disabled={!zoom} onClick={() => onZoom(null)}><Icon name="zoomOut" />Whole night</button>
+        <button className="btn" type="button" aria-disabled={!zoom} title="Drag across a chart to zoom in. Pinch or hold Cmd and scroll to zoom around the pointer. Select Whole night to reset." onClick={() => zoom && onZoom(null)}><Icon name="zoomOut" />Whole night</button>
       </div>
-      <p className="readout" aria-live="off">{readout || "Drag across a chart to zoom in. Pinch or hold Cmd and scroll to zoom around the pointer."}</p>
-      <div className="legend stage-help-legend" aria-label="Estimated sleep stage legend">
-        <span><i className="stage-key dots" style={{ backgroundColor: "var(--watch)" }} />Wake <HelpTip term="wake" /></span><span><i className="stage-key diagonal" style={{ backgroundColor: "var(--ev2)" }} />REM <HelpTip term="remSleep" /></span><span><i className="stage-key horizontal" style={{ backgroundColor: "var(--leak-line)" }} />Light <HelpTip term="lightSleep" /></span><span><i className="stage-key cross" style={{ backgroundColor: "var(--accent)" }} />Deep <HelpTip term="deepSleep" /></span><span>Shaded gaps = no data</span>
-      </div>
+      <p className="readout" aria-live="off">{readout || "\u00a0"}</p>
       <div className="charts">
         {rows.map((r) => (
           <div className="chart-row" key={r.label}>
             <div className="lbl"><b>{r.label} {r.help ? <HelpTip term={r.help} /> : null}</b><span>{r.sub}</span></div>
-            <div className="plot" ref={r.ref} role="img" aria-label={`${r.label} through the night`} />
+            {r.label === "Sleep stages" ? <div className="plot stage-lane"><Hypnogram stages={detail.stages} from={zoom?.min ?? x[0]} to={zoom?.max ?? x[x.length - 1]} axisWidth={NIGHT_CHART_AXIS_WIDTH} chartScale={stageScale} /></div> : <div className="plot" ref={r.ref} role="img" aria-label={`${r.label} through the night`} />}
           </div>
         ))}
       </div>

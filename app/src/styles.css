@@ -6,6 +6,7 @@
   --good:#24704E; --good-soft:#E2F1E8; --watch:#835500; --watch-soft:#FBEFD3; --talk:#AA3628; --talk-soft:#FAE4DF;
   --neutral:#5A656E; --neutral-soft:#ECEBE5;
   --zone-good:#B7DEC8; --zone-watch:#F2D89C; --zone-talk:#EFBBB1; --zone-none:#E3E1DA; --band:#D4E9E8;
+  --score-duration:#4775CA; --score-breathing:#825FC4; --score-mask-seal:#328D92; --score-continuity:#B65D97; --score-stages:#707C9D;
   --ev1:#2C5FC4; --ev2:#7647BC; --evh:#A85A12;
   --p-line:#1D6870; --leak-fill:#B5D6E3; --leak-line:#33718C; --amp-line:#585FA8; --flow-line:#1D6870; --pause:#F6DDA0;
   --heat-none:transparent; --heat1:#C4E3E0; --heat2:#6CB3B0; --heat3:#1D6870; --heat-low:#E5A13A;
@@ -23,6 +24,7 @@
     --good:#74CC9E; --good-soft:#18332A; --watch:#EDBB57; --watch-soft:#382C12; --talk:#F2917D; --talk-soft:#3C211C;
     --neutral:#A1ACB4; --neutral-soft:#262E35;
     --zone-good:#2F6A4E; --zone-watch:#7A6026; --zone-talk:#7F3B30; --zone-none:#323B43; --band:#1F3B3C;
+    --score-duration:#83A9F0; --score-breathing:#B49AE7; --score-mask-seal:#70C5CB; --score-continuity:#E39DC6; --score-stages:#ABB7D2;
     --ev1:#7FA6F5; --ev2:#B79AF0; --evh:#EFA35A;
     --p-line:#6FC2C4; --leak-fill:#24475A; --leak-line:#7DBCD8; --amp-line:#A3A8EE; --flow-line:#6FC2C4; --pause:#4E3F17;
     --heat1:#1F4C4C; --heat2:#2F8584; --heat3:#79CBC9; --heat-low:#D99A39;
@@ -38,6 +40,7 @@
   --good:#74CC9E; --good-soft:#18332A; --watch:#EDBB57; --watch-soft:#382C12; --talk:#F2917D; --talk-soft:#3C211C;
   --neutral:#A1ACB4; --neutral-soft:#262E35;
   --zone-good:#2F6A4E; --zone-watch:#7A6026; --zone-talk:#7F3B30; --zone-none:#323B43; --band:#1F3B3C;
+  --score-duration:#83A9F0; --score-breathing:#B49AE7; --score-mask-seal:#70C5CB; --score-continuity:#E39DC6; --score-stages:#ABB7D2;
   --ev1:#7FA6F5; --ev2:#B79AF0; --evh:#EFA35A;
   --p-line:#6FC2C4; --leak-fill:#24475A; --leak-line:#7DBCD8; --amp-line:#A3A8EE; --flow-line:#6FC2C4; --pause:#4E3F17;
   --heat1:#1F4C4C; --heat2:#2F8584; --heat3:#79CBC9; --heat-low:#D99A39;
@@ -83,7 +86,7 @@ a{color:var(--accent)}
 .btn.primary:hover{filter:brightness(1.07)}
 .btn.icon{padding:8px}
 .btn svg{width:20px;height:20px}
-.content{width:100%;max-width:1520px;margin:0 auto;padding:28px 32px 56px;container:main / inline-size}
+.content{width:100%;max-width:1520px;margin:0;padding:28px 32px 56px;container:main / inline-size}
 .screen-h{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;margin-bottom:20px}
 .screen-h h1{font-size:24px;letter-spacing:-.015em}
 .screen-h .sub{color:var(--muted);font-size:14px}
@@ -299,7 +302,7 @@ html,body,#root{height:100%}
 .btn:disabled{opacity:.5;cursor:default}
 .btn.danger{background:var(--talk);border-color:var(--talk);color:var(--surface)}
 .btn.danger:hover{filter:brightness(1.07)}
-.btn.link{border:0;background:transparent;color:var(--accent);padding:8px 6px;text-decoration:underline;text-underline-offset:3px}
+.btn.link{border:0;background:transparent;color:var(--accent);padding:8px 6px;text-decoration:none}
 .btn.link:hover{background:transparent;color:var(--ink)}
 .device,.disclaimer{white-space:nowrap}
 .disclaimer{display:inline-flex;align-items:center;gap:8px;min-height:32px;padding:4px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-size:12.5px;color:var(--muted)}
@@ -502,7 +505,7 @@ details.tech ul{margin:6px 0 0;padding-left:18px;color:var(--ink-2)}
 /* ---------- desktop window sizes ---------- */
 @media (max-width:1439px){
   :root{--nav-w:208px}
-  .content{padding:24px 24px 48px}
+  .content{padding:24px 32px 48px}
   .with-aside{grid-template-columns:minmax(0,1fr) 316px}
   .brand{margin:-22px -16px 12px}
 }
@@ -543,3 +546,6 @@ details.tech ul{margin:6px 0 0;padding-left:18px;color:var(--ink-2)}
   .evscroll{max-height:360px}
 }
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+
+/* Keep the navigation visible through the full page scroll. */
+.side{position:sticky;top:0;height:100vh;align-self:start;overflow-y:auto}.nav button:focus:not(:focus-visible):not([aria-current="page"]){background:transparent}.content a{color:var(--accent);text-decoration:none}.content a:hover{text-decoration:none;color:var(--ink)}

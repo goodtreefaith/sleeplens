@@ -6,6 +6,7 @@ import { NightCharts, type Zoom } from "../charts/NightCharts";
 import { DateStepper } from "../components/DateStepper";
 import { EVENT_STYLE, Icon, type MarkerKind, Swatch } from "../components/Icon";
 import { HelpTip } from "../components/HelpTip";
+import { StageSummary } from "../components/SleepStages";
 import { ScoreBadge } from "../components/SleepQuality";
 import "../night-trends-v2.css";
 import { SourceTag } from "../components/Status";
@@ -53,6 +54,7 @@ export function NightScreen({ date, go, theme }: { date?: string; go: Go; theme:
           <div className="stack">
             <Sessions detail={detail} />
             <section className="card" aria-labelledby="h-charts" ref={chartCard}>
+              <HelpTip term="nightCharts" variant="info" />
               <div className="card-h"><h2 id="h-charts">Through the night</h2><p>One reading per second. Gaps are times the mask was off.</p></div>
               {detail.series ? (
                 <NightCharts detail={detail} unit={unit} theme={theme} zoom={zoom} onZoom={setZoom} />
@@ -70,7 +72,13 @@ export function NightScreen({ date, go, theme }: { date?: string; go: Go; theme:
               const r = chartCard.current?.getBoundingClientRect();
               if (r && (r.bottom < 60 || r.top > window.innerHeight - 120)) chartCard.current?.scrollIntoView({ block: "start" });
             }} />
+            <section className="card" aria-labelledby="h-stage-summary">
+              <HelpTip term="sleepStages" variant="info" />
+              <h2 id="h-stage-summary">Estimated sleep stages</h2>
+              <StageSummary minutes={detail.stages?.minutes ?? null} stages={detail.stages} go={go} />
+            </section>
             <section className="card" aria-labelledby="h-sum">
+              <HelpTip term="machineSummary" variant="info" />
               <div className="card-h"><h2 id="h-sum">Machine summary</h2></div>
               <dl className="kv">
                 <dt>Hours used</dt><dd>{hm(detail.usageMinutes)}</dd>
@@ -84,19 +92,20 @@ export function NightScreen({ date, go, theme }: { date?: string; go: Go; theme:
                 <dt>Hypopnea index <HelpTip term="hypopnea" /></dt><dd>{r1(detail.summary.hi)}</dd>
                 <dt>Snore index</dt><dd>{r1(detail.summary.sni)}</dd>
                 <dt>Start pressure <HelpTip term="pressure" /></dt><dd>{detail.summary.startPressure == null ? "–" : `${r1(detail.summary.startPressure)} ${u}`}</dd>
-                <dt>Highest pressure <HelpTip term="pressure" /></dt><dd>{detail.summary.maxPressure == null ? "–" : `${r1(detail.summary.maxPressure)} ${u}`}</dd>
-                <dt>Average pressure <HelpTip term="pressure" /></dt><dd>{r1(detail.pressureMean)} {u}</dd>
+                <dt>Highest pressure</dt><dd>{detail.summary.maxPressure == null ? "–" : `${r1(detail.summary.maxPressure)} ${u}`}</dd>
+                <dt>Average pressure</dt><dd>{r1(detail.pressureMean)} {u}</dd>
                 <dt>High pressure (90%) <HelpTip term="pressureP90" /></dt><dd>{r1(detail.pressureP90)} {u}</dd>
               </dl>
               {detail.pressureSource === "computed" ? <p style={{ marginTop: 12 }}><SourceTag computed /> <span className="quiet">Pressure values</span></p> : null}
             </section>
             {detail.settings ? (
               <section className="card" aria-labelledby="h-set">
+              <HelpTip term="nightSettings" variant="info" />
                 <div className="card-h"><h2 id="h-set">Settings this night</h2>{detail.settingsChanged ? <span className="status watch"><Icon name="sliders" />Changed</span> : null}</div>
                 <dl className="kv">
                   <dt>Mode</dt><dd>{detail.settings.modeLabel}</dd>
                   <dt>Pressure range <HelpTip term="pressure" /></dt><dd>{detail.settings.minPressure}–{detail.settings.maxPressure} {u}</dd>
-                  <dt>Start pressure <HelpTip term="pressure" /></dt><dd>{detail.settings.startPressure} {u}</dd>
+                  <dt>Start pressure</dt><dd>{detail.settings.startPressure} {u}</dd>
                   <dt>Ramp <HelpTip term="ramp" /></dt><dd>{detail.settings.rampMinutes ? `${detail.settings.rampMinutes} min` : "Off"}</dd>
                   <dt>Humidifier</dt><dd>Level {detail.settings.humidifierLevel}</dd>
                   <dt>Comfort <HelpTip term="comfort" /></dt><dd>Level {detail.settings.comfortLevel}</dd>
@@ -153,6 +162,7 @@ function EventList({ detail, sel, onPick }: { detail: NightDetail; sel: number |
   const counts = LIST_KINDS.map((k) => ({ k, n: list.filter((x) => x.e.kind === k).length })).filter((c) => !notRecorded || c.n > 0);
   return (
     <section className="card events-card" aria-labelledby="h-ev">
+              <HelpTip term="ahi" variant="info" />
       <div className="card-h"><h2 id="h-ev">Events</h2><p>{notRecorded ? "Breathing events not recorded by the machine" : plural(list.length, "event")}</p></div>
       {counts.length ? (
         <div className="legend" style={{ marginBottom: 10 }}>
@@ -170,7 +180,7 @@ function EventList({ detail, sel, onPick }: { detail: NightDetail; sel: number |
                     <Swatch kind={k} />
                     <span className="ev-name">{SHORT_LABEL[k]} · {e.value} {k === "largeLeak" ? "min" : "s"}</span>
                     <span className="t">{clock(e.time)}</span>
-                  </button><HelpTip term={k} /></div>
+                  </button></div>
                 );
               })}
             </div>

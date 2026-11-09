@@ -259,8 +259,12 @@ export interface Tip {
   title: string;
   body: string;
   learnSlug: string | null;
+  evidence: string | null;
+  evidenceDates: string[];
 }
 export interface PeriodSummary {
+  headline: string;
+  clampedToFirstNight: boolean;
   period: Period;
   from: string; to: string; daysInRange: number;
   nights: number; validNights: number; compliancePct: number;

@@ -14,6 +14,15 @@ export function neighbours(nights: NightListItem[], d: string) {
   return { prev, next };
 }
 
+export function nightSubtitle(date: string, now = new Date()): string {
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  if (date === today && now.getHours() >= 18) return "Night starting this evening";
+  const next = addDays(date, 1);
+  const first = dayDate(date);
+  const sameMonth = date.slice(0, 7) === next.slice(0, 7);
+  return `Night of ${sameMonth ? first.replace(/ [A-Za-z]+$/, "") : first} → ${dayDate(next)}`;
+}
+
 /** Previous / next night arrows, a calendar popover and a "Latest night" button. */
 export function DateStepper({ nights, date, onDate }: { nights: NightListItem[]; date: string; onDate: (d: string) => void }) {
   const { prev, next } = neighbours(nights, date);
@@ -33,7 +42,7 @@ export function DateStepper({ nights, date, onDate }: { nights: NightListItem[];
     lastUsed.current = null;
   }, [date, prev, next]);
 
-  const sub = !has ? "No therapy recorded" : isLatest ? "Night starting this evening" : `Night of ${dayDate(date)}`;
+  const sub = !has ? "No therapy recorded" : nightSubtitle(date);
   return (
     <div className="datebar" role="group" aria-label="Choose a night">
       <button ref={prevBtn} className="btn icon" type="button" disabled={!prev} onClick={() => { lastUsed.current = "prev"; if (prev) onDate(prev); }} aria-label={`Previous night${prev ? ", " + longDate(prev) : ""}`}>

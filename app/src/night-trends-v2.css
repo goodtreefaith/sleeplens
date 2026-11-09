@@ -5,11 +5,11 @@
 .chart-guide-label{font-size:12px;line-height:1.4;color:var(--muted);margin:4px 0 0;min-height:18px}
 .prescription-marker{cursor:help;outline:none}
 .prescription-marker:focus .mk{stroke:var(--ink);stroke-width:2}
-.trends-v2 .multiples{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+.trends-v2 .multiples{grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}
 .trends-v2 .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
 .trends-v2 .kpi .status{white-space:nowrap;font-size:12px;padding:4px 7px;flex-shrink:0}
 .trends-v2 .trend-figs{grid-template-columns:minmax(0,1fr) 280px}
-.balanced-months.heat-months{display:grid;justify-content:space-between;gap:20px 24px}
+.balanced-months.heat-months{display:grid;justify-content:start;gap:20px 24px}
 .month-body{display:flex;gap:4px;align-items:flex-start}
 .month-body .heat-wd{flex:none}
 .stage-help-legend{margin:6px 0 14px;flex-wrap:wrap}
@@ -19,3 +19,18 @@
 .evcounts .event-help-row .help-wrap{flex:none}
 .evcounts .event-help-row .help-tip{display:inline-grid;place-items:center;grid-template-columns:none;width:20px;height:20px;min-height:20px;padding:0;border:1px solid var(--line-strong);border-radius:50%;font-size:12px;text-align:center}
 .chart-marker-tooltip{position:absolute;top:0;left:24px;right:8px;z-index:5;margin:0;pointer-events:none;box-shadow:0 3px 12px #0002}
+
+.trends-v2 .mult{display:flex;flex-direction:column}
+.trends-v2 .mult .chartwrap{margin-top:auto;padding-top:8px}
+.chart-point-readout{font-size:12px;color:var(--muted);height:36px;overflow:auto;overflow-wrap:anywhere;margin:3px 0;line-height:18px}
+.heat-focus-readout{grid-column:1/-1;margin:0;font-size:12px;min-height:18px}
+.heat .c:focus{outline:2px solid var(--ink);outline-offset:2px}
+.chartwrap>svg:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+
+.unified-chart-tools{align-items:flex-start}
+.unified-chart-tools .legend{flex:1;flex-wrap:wrap}
+.unified-chart-tools>.btn{flex:none}
+
+.trends-v2 .screen-h .trends-range{flex-basis:100%;display:flex;justify-content:flex-start}
+.typical-range-band{fill:var(--accent);opacity:.09}
+.score-guide{stroke:var(--line-strong);stroke-width:1;stroke-dasharray:2 5}

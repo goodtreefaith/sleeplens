@@ -28,8 +28,8 @@ export function estimateMockStages(item: NightListItem, sessions: Session[], ind
     if (on) {
       const cycle = Math.min(cycles - 1, Math.floor(maskMinutes / cycleLength));
       const phase = (maskMinutes % cycleLength) / cycleLength;
-      const deepEnd = Math.max(0.12, 0.27 - cycle * 0.055);
-      const remStart = 0.98 - cycle * 0.035;
+      const deepEnd = Math.max(0.12, 0.34 - cycle * 0.035);
+      const remStart = 0.88 - cycle * 0.03;
       stage = maskMinutes < 12 || (e + index * 7) % 193 < 3 ? "wake"
         : phase > 0.10 && phase < deepEnd ? "deep"
         : phase > remStart ? "rem" : "light";
@@ -44,31 +44,32 @@ export function estimateMockStages(item: NightListItem, sessions: Session[], ind
 export function computeMockScore(item: NightListItem, stages: SleepStageEstimate | null): SleepScore | null {
   if (item.usageMinutes < 30) return null;
   const components: SleepScore["components"] = [];
+  let unroundedPoints = 0;
   const add = (key: SleepScore["components"][number]["key"], label: string, points: number, maxPoints: number, detail: string) => {
+    unroundedPoints += points;
     components.push({ key, label, points: round(points), maxPoints, detail });
   };
-  add("duration", "Hours used", linear(item.usageMinutes, [[0, 0], [240, 15], [420, 30]]), 30, `${Math.floor(item.usageMinutes / 60)} h ${item.usageMinutes % 60} m of use, compared with the 7 h guide.`);
-  if (item.ahi != null) add("breathing", "Breathing events", linear(item.ahi, [[0, 30], [1, 30], [5, 22], [15, 8], [30, 0]]), 30, `${item.ahi.toFixed(1)} breathing events per hour were recorded.`);
-  if (item.largeLeakMinutes != null || item.excessLeakP95 != null) {
+  add("duration", "Hours used", linear(item.usageMinutes, [[0, 0], [240, 12], [360, 22], [420, 27], [480, 30]]), 30, `${Math.floor(item.usageMinutes / 60)} h ${item.usageMinutes % 60} m of use, compared with the 8 h guide.`);
+  if (item.ahi != null) add("breathing", "Breathing events", linear(item.ahi, [[0, 30], [1, 28], [2, 26], [5, 20], [15, 8], [30, 0]]), 30, `${item.ahi.toFixed(1)} breathing events per hour were recorded.`);
+  if (item.largeLeakMinutes != null) {
     const leakShare = (item.largeLeakMinutes ?? 0) / item.usageMinutes * 100;
-    const points = linear(leakShare, [[0, 15], [5, 10], [20, 0]]) - clamp(((item.excessLeakP95 ?? 0) - 24) / 16 * 5, 5);
+    const points = linear(leakShare, [[0, 15], [5, 10], [20, 0]]) - clamp(((item.excessLeakP95 ?? 0) - 20) / 16 * 5, 5);
     add("maskSeal", "Mask seal", Math.max(0, points), 15, `${item.largeLeakMinutes == null ? "Large-leak time was not recorded" : `${item.largeLeakMinutes} minutes of large leak`}; ${item.excessLeakP95 == null ? "extra-leak data was not recorded" : `extra leak reached ${item.excessLeakP95} L/min at the 95th percentile`}.`);
   }
-  const wakePenalty = stages ? clamp((stages.minutes.wake / item.usageMinutes - 0.1) * 40, 4) : 0;
-  add("continuity", "Unbroken sleep", clamp(10 - item.interruptions * 2 - wakePenalty, 10), 10, `${item.interruptions} mask-off ${item.interruptions === 1 ? "break interrupted" : "breaks interrupted"} this night.`);
+  const wakePenalty = stages ? clamp((stages.minutes.wake / item.usageMinutes - 0.05) / 0.15 * 6, 6) : 0;
+  add("continuity", "Unbroken sleep", clamp(15 - item.interruptions * 3 - wakePenalty, 15), 15, `${item.interruptions} mask-off ${item.interruptions === 1 ? "break interrupted" : "breaks interrupted"} this night.`);
   if (stages) {
     const sleep = stages.minutes.light + stages.minutes.deep + stages.minutes.rem;
-    add("sleepStages", "Sleep stages (estimated)", 15 * Math.min(1, sleep > 0 ? (stages.minutes.deep + stages.minutes.rem) / sleep / 0.35 : 0), 15, `${Math.round(stages.minutes.deep + stages.minutes.rem)} minutes were estimated as deep or REM sleep.`);
+    add("sleepStages", "Sleep stages (estimated)", 5 * Math.min(1, sleep > 0 ? stages.minutes.deep / sleep / 0.15 : 0) + 5 * Math.min(1, sleep > 0 ? stages.minutes.rem / sleep / 0.20 : 0), 10, `${Math.round(stages.minutes.deep + stages.minutes.rem)} minutes were estimated as deep or REM sleep.`);
   }
   const available = components.reduce((sum, c) => sum + c.maxPoints, 0);
-  if (available !== 100) for (const c of components) { c.points = round(c.points * 100 / available); c.maxPoints = round(c.maxPoints * 100 / available); }
-  const total = Math.round(components.reduce((sum, c) => sum + c.points, 0));
+  const total = Math.round(unroundedPoints / available * 100);
   return { total, label: total >= 85 ? "Great" : total >= 70 ? "Good" : total >= 50 ? "Fair" : "Poor", estimated: true, components };
 }
 
 export function nightTips(item: NightListItem, recent: NightListItem[] = [], prescriptionChanged = false): Tip[] {
   const tips: Tip[] = [];
-  const add = (id: string, severity: Tip["severity"], title: string, body: string, learnSlug: string) => tips.push({ id, severity, title, body, learnSlug });
+  const add = (id: string, severity: Tip["severity"], title: string, body: string, learnSlug: string) => tips.push({ id, severity, title, body, learnSlug, evidence: id === "ahi-watch" ? `AHI ${item.ahi?.toFixed(1)} events/hour` : id === "mask-fit" ? `${item.largeLeakMinutes ?? 0} minutes of large leak; extra leak P95 ${item.excessLeakP95 ?? "not recorded"} L/min` : id === "short-night" ? `${Math.round(item.usageMinutes)} minutes of use` : id === "interruptions" ? `${item.interruptions} mask-off breaks` : id === "central-watch" ? `${item.eventCounts.central} central events recorded` : "Prescription changed on this night", evidenceDates: [item.date] });
   const totalEvents = Object.values(item.eventCounts).reduce((a, b) => a + b, 0);
   if (item.eventCounts.central / (item.usageMinutes / 60) > 5 || (item.ahi != null && item.ahi > 5 && item.eventCounts.central > totalEvents / 2)) add("central-watch", "talk", "Discuss central breathing events", "Contact your clinician about the central breathing events recorded during therapy.", "centralApnea");
   if (item.ahi != null && item.ahi >= 5) {
@@ -80,5 +81,5 @@ export function nightTips(item: NightListItem, recent: NightListItem[] = [], pre
   if ((item.largeLeakMinutes ?? 0) / item.usageMinutes > 0.05 || (item.excessLeakP95 ?? 0) > 24) add("mask-fit", "watch", "Check your mask fit", "Check the fit of your mask and look for cushion wear. A comfortable seal helps therapy work as intended.", "excessLeak");
   if (item.interruptions >= 3) add("interruptions", "info", "Several mask-off breaks", "There were several breaks in therapy. Notice whether discomfort or your routine made it harder to keep the mask on.", "interruptions");
   if (prescriptionChanged) add("prescription-changed", "info", "Compare before and after", "Your prescription changed. Compare several nights before and after the change with your clinician.", "pressure");
-  return tips.length ? tips.slice(0, 4) : [{ id: "all-good", severity: "good", title: "Keep your routine going", body: "Your recorded therapy measures look steady. Keep using your mask whenever you sleep.", learnSlug: "sleepScore" }];
+  return tips.length ? tips.slice(0, 4) : [{ id: "all-good", severity: "good", title: "Keep your routine going", body: "Your recorded therapy measures look steady. Keep using your mask whenever you sleep.", learnSlug: "sleepScore", evidence: `AHI ${item.ahi == null ? "not recorded" : item.ahi.toFixed(1) + " events/hour"}; ${Math.round(item.usageMinutes)} minutes of use`, evidenceDates: [item.date] }];
 }

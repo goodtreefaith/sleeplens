@@ -2,11 +2,14 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { api } from "../api";
 import type { AppInfo, ImportProgress, ImportResult, NightListItem, SettingsChange } from "../api/types";
 
+import { advanceImportMonths, finishImportMonths, type ImportMonths } from "./importMonths";
+
 export type ImportPhase = "idle" | "running" | "finished";
 
 export interface ImportState {
   phase: ImportPhase;
   progress: ImportProgress | null;
+  months: ImportMonths;
   result: ImportResult | null;
   /** What is being read: the card label, a path, or "sample data". */
   source: string;
@@ -30,7 +33,7 @@ export interface AppData {
 }
 
 const Ctx = createContext<AppData | null>(null);
-const IDLE: ImportState = { phase: "idle", progress: null, result: null, source: "", first: false, error: null };
+const IDLE: ImportState = { phase: "idle", progress: null, months: {}, result: null, source: "", first: false, error: null };
 
 /** App-wide data and import state. Import listeners live here so an import survives navigation. */
 export function DataProvider({ children }: { children: ReactNode }) {
@@ -66,12 +69,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const keep = (u: () => void) => { if (alive) offs.push(u); else u(); };
     void api.onImportProgress((p) => {
       if (!alive) return;
-      setImp((s) => (s.phase === "finished" ? s : { ...s, phase: "running", progress: p }));
+      setImp((s) => (s.phase === "finished" ? s : { ...s, phase: "running", progress: p, months: advanceImportMonths(s.months, p) }));
     }).then(keep);
     void api.onImportFinished((r) => {
       if (!alive) return;
       running.current = false;
-      setImp((s) => ({ ...s, phase: "finished", result: r }));
+      setImp((s) => ({ ...s, phase: "finished", result: r, months: finishImportMonths(s.months, r) }));
       void refresh();
     }).then(keep);
     return () => { alive = false; offs.forEach((u) => u()); };
@@ -80,7 +83,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const startImport = useCallback(async (path: string | null, label: string) => {
     if (running.current) return;
     running.current = true;
-    setImp({ phase: "running", progress: null, result: null, source: label, first: (infoRef.current?.nightCount ?? 0) === 0, error: null });
+    setImp({ phase: "running", progress: null, months: {}, result: null, source: label, first: (infoRef.current?.nightCount ?? 0) === 0, error: null });
     try {
       if (path === null) await api.loadSampleData();
       else await api.importCard(path);

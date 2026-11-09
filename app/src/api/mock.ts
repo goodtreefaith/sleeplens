@@ -1,4 +1,5 @@
 import { nightTips } from "./mockV2";
+import { plural } from "../lib/format";
 import { addDays, daysInclusive } from "../lib/dates";
 import {
   MOCK_DEVICE, MOCK_FIRST_DATE, mockMonths, mockNightDetail, mockNights, mockSettingsHistory, mockStageMinutes
@@ -79,9 +80,15 @@ export function computePeriodSummary(
   history = mockSettingsHistory()
 ): PeriodSummary {
   const days = PERIOD_DAYS[period];
-  const from = addDays(end, 1 - days);
+  const requestedFrom = addDays(end, 1 - days);
+  const first = all[0]?.date;
+  const clampedToFirstNight = !!first && first <= end && requestedFrom < first;
+  const from = clampedToFirstNight ? first! : requestedFrom;
+  const rangeDays = daysInclusive(from, end);
   const current = computeTrends(all, { from, to: end }, history);
-  const before = computeTrends(all, { from: addDays(from, -days), to: addDays(from, -1) }, history);
+  const previousFrom = addDays(requestedFrom, -days);
+  const previousAvailable = !first || previousFrom >= first;
+  const before = computeTrends(previousAvailable ? all : [], { from: previousFrom, to: addDays(requestedFrom, -1) }, history);
   const ns = all.filter(n => inRange(n.date, { from, to: end }) && n.usageMinutes > 0);
   const stages = ns.map(n => stageMinutes(n.date)).filter((v): v is StageMinutes => v != null);
   const avgStageMinutes = stages.length ? Object.fromEntries(
@@ -91,14 +98,28 @@ export function computePeriodSummary(
     .sort((a, b) => a.sleepScore - b.sleepScore || a.date.localeCompare(b.date));
   const night = (n: typeof scored[number] | undefined) => n ? { date: n.date, sleepScore: n.sleepScore } : null;
   const tips: Tip[] = [];
-  const add = (id: string, severity: Tip["severity"], title: string, body: string, learnSlug: string) => tips.push({ id, severity, title, body, learnSlug });
+  const add = (id: string, severity: Tip["severity"], title: string, body: string, learnSlug: string) => tips.push({ id, severity, title, body, learnSlug, evidence: id.startsWith("compliance") ? `${plural(current.validNights, "valid night")} out of ${rangeDays} calendar days` : id.startsWith("score-") ? `Average score ${Math.round(current.avgSleepScore ?? 0)}; previous ${Math.round(before.avgSleepScore ?? 0)}` : `${plural(ns.length, "night")} recorded in this period`, evidenceDates: ns.slice(-5).reverse().map(n => n.date) });
   // Clinical and mask-fit tips keep their priority; the period-specific guides follow.
-  for (const n of ns) for (const tip of nightTips(n, all.filter(p => p.date <= n.date && p.date >= addDays(n.date, -6)))) {
+  for (const n of ns) for (const tip of nightTips(n, all.filter(p => p.date <= n.date).slice(-7))) {
+    if (tip.id === "ahi-watch" && current.avgAhi != null && current.avgAhi <= 5 && ns.filter(n => (n.ahi ?? 0) > 5).length < 3) continue;
     if (!["all-good", "prescription-changed"].includes(tip.id)) {
       const existing = tips.findIndex(t => t.id === tip.id);
       if (existing < 0) tips.push(tip);
       else if (tip.severity === "talk") tips[existing] = tip;
     }
+  }
+  for (const tip of tips) {
+    const matches = ns.filter(n => nightTips(n).some(t => t.id === tip.id));
+    tip.evidenceDates = matches.slice(-5).reverse().map(n => n.date);
+    const count = matches.length;
+    const evidence: Record<string, string> = {
+      "ahi-watch": `AHI above 5 on ${plural(ns.filter(n => (n.ahi ?? 0) > 5).length, "night")}; period average ${current.avgAhi?.toFixed(1)} events/hour`,
+      "mask-fit": `${plural(count, "night")} with large leak over 5% of the night or extra-leak P95 over 24 L/min`,
+      "short-night": `${plural(count, "night")} with less than 4 hours of use`,
+      "interruptions": `${plural(count, "night")} with 3 or more mask-off breaks`,
+      "central-watch": `${plural(count, "night")} with central events over 5/hour or a majority of breathing events central`
+    };
+    tip.evidence = evidence[tip.id] ?? `${plural(count, "night")} recorded`;
   }
   tips.sort((a, b) => ["talk", "watch", "info", "good"].indexOf(a.severity) - ["talk", "watch", "info", "good"].indexOf(b.severity));
   if (current.compliancePct < 70) add("compliance-watch", "watch", "Build a steady therapy routine", "Fewer than 70% of days had more than four hours of use. Aim to use your mask whenever you sleep.", "compliance");
@@ -108,18 +129,24 @@ export function computePeriodSummary(
     if (delta >= 5) add("score-up", "good", "Your average score is up", "Your average estimated sleep score rose by at least five points compared with the previous period.", "sleepScore");
     else if (delta <= -5) add("score-down", "info", "Your average score is lower", "Your average estimated sleep score fell by at least five points. Review the breakdown and look for changes in your routine.", "sleepScore");
   }
-  if (current.points.some(n => n.prescriptionChanged)) add("prescription-changed", "info", "Compare before and after", "Your prescription changed during this period. Compare nights before and after with your clinician.", "pressure");
+  const changedDates = current.points.filter(n => n.prescriptionChanged).map(n => n.date).reverse();
+  if (changedDates.length) {
+    add("prescription-changed", "info", "Compare before and after", "Your prescription changed during this period. Compare nights before and after with your clinician.", "pressure");
+    const tip = tips[tips.length - 1]!;
+    tip.evidence = `Mode or pressure settings changed on ${changedDates.length} ${changedDates.length === 1 ? "night" : "nights"}`;
+    tip.evidenceDates = changedDates.slice(0, 5);
+  }
   if (!tips.length) add("all-good", "good", "Keep your routine going", "Your recorded therapy measures look steady. Keep using your mask whenever you sleep.", "sleepScore");
   const byDate = new Map(ns.map(n => [n.date, n]));
   return {
-    period, from, to: end, daysInRange: days, nights: current.nights, validNights: current.validNights,
+    period, from, to: end, clampedToFirstNight, headline: current.nights ? `You used therapy on ${current.nights} of ${rangeDays} nights${current.avgAhi == null ? "." : `, with an average of ${current.avgAhi.toFixed(1)} breathing events per hour.`}` : "No therapy nights were recorded in this period.", daysInRange: rangeDays, nights: current.nights, validNights: current.validNights,
     compliancePct: current.compliancePct, avgUsageMinutes: current.nights ? current.avgUsageMinutes : null,
     avgAhi: current.avgAhi, avgSleepScore: current.avgSleepScore, avgExcessLeakP95: current.avgExcessLeakP95,
     avgPressureP90: current.avgPressureP90, avgStageMinutes,
     previous: { avgUsageMinutes: before.nights ? before.avgUsageMinutes : null, avgAhi: before.avgAhi,
       avgSleepScore: before.avgSleepScore, compliancePct: before.nights ? before.compliancePct : null },
     bestNight: night(scored[scored.length - 1]), worstNight: night(scored[0]),
-    scoreSeries: Array.from({ length: days }, (_, i) => {
+    scoreSeries: Array.from({ length: rangeDays }, (_, i) => {
       const date = addDays(from, i), n = byDate.get(date);
       return { date, sleepScore: n?.sleepScore ?? null, usageMinutes: n?.usageMinutes ?? 0 };
     }),
@@ -242,6 +269,7 @@ export function createMockApi(opts: MockOptions = {}): SleepLensApi {
       return computeTrends(nights(), range);
     },
     async periodSummary(period, end) {
+      if (!nights().length && !end) throw new Error("Import therapy data before choosing a period.");
       return computePeriodSummary(nights(), period, end);
     },
     async settingsHistory() {
