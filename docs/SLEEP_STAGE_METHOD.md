@@ -117,19 +117,25 @@ estimator against expert labels, and reports:
 Two datasets were available. They point in the same direction and both are far
 from good.
 
-**Sleep-EDF** — 25 night pairs, 25 participants, 22,964 scored epochs. Respiration
+**Sleep-EDF** — 32 night pairs, 32 participants, 28,016 scored epochs. Respiration
 here is an oro-nasal thermistor at only **1 Hz**, which cannot support breath-level
 features, so coverage is low and the four-class numbers should be read as a floor
 rather than a fair test of the method.
 
 | Metric | v4 | Always Light | Time of night |
 | --- | --- | --- | --- |
-| Four-class accuracy | 41.5 % | 19.1 % | 44.2 % |
-| Four-class κ | 0.143 | 0.000 | 0.182 |
-| Three-class κ | 0.187 | — | — |
-| Sleep/wake accuracy | 60.6 % | — | — |
-| Sleep/wake κ | 0.210 | — | — |
-| Coverage | 43.8 % | 100 % | 100 % |
+| Four-class accuracy | 42.5 % | 19.5 % | 44.4 % |
+| Four-class κ | 0.160 | 0.000 | 0.184 |
+| Three-class κ | 0.207 | — | — |
+| Sleep/wake accuracy | 62.3 % | — | — |
+| Sleep/wake κ | 0.243 | — | — |
+| Coverage | 45.0 % | 100 % | 100 % |
+
+Participant-bootstrap 95 % intervals for the four-class kappa are 0.062 to 0.236,
+and for accuracy 35.1 % to 49.6 %. The kappa interval still includes the
+time-of-night baseline's point estimate, so with 32 participants this data cannot
+show that the breathing features beat a time-of-night prior even where they
+slightly do.
 
 **ucddb** — 4 truncated night files, 4 participants, 422 scored epochs. This has a
 true 8 Hz flow channel but very little data.
@@ -141,13 +147,13 @@ true 8 Hz flow channel but very little data.
 | Sleep/wake κ | 0.252 | — | — |
 | Coverage | 71.9 % | 100 % | 100 % |
 
-Per-class recall on Sleep-EDF: Wake 64.8 %, Light 38.9 %, Deep **0.0 %**, REM
+Per-class recall on Sleep-EDF: Wake 67.6 %, Light 40.0 %, Deep **0.0 %**, REM
 25.6 %. Deep is never predicted on either dataset, which is consistent with the
 literature's finding that N3 is the hardest stage to recover from respiration and
 with the estimator's deliberately conservative Deep gate.
 
 **Read this as a negative result.** On Sleep-EDF the estimator is beaten outright by
-a time-of-night prior on four-class agreement (41.5 % vs 44.2 %), and only sleep
+a time-of-night prior on four-class agreement (42.5 % vs 44.4 %), and only sleep
 versus wake clearly beats chance. On ucddb four-class agreement is *below*
 always-Light. The method is not yet a useful four-class stager, and the app's
 wording must not imply otherwise.
@@ -157,7 +163,7 @@ Caveats:
 1. **The 1 Hz channel is the wrong instrument.** Sleep-EDF's thermistor cannot
    resolve inspiratory duty cycle or breath-to-breath shape, which is what most of
    the model's evidence depends on. Its numbers understate what an 8 Hz or 50 Hz
-   channel can support — but they are also the only 25-participant measurement
+   channel can support — but they are also the only 32-participant measurement
    available, so they are reported rather than explained away.
 2. **ucddb has four nights**, two of them truncated by an interrupted download, and
    its interval for κ spans −0.03 to 0.15. It cannot distinguish this from several
