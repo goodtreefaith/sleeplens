@@ -373,6 +373,40 @@ unknown blocks before and after).
   is always 1 (Auto CPAP), ramp 15, AS-Elex 3, Auto ON and OFF on, leak alert
   off, pressure-unit byte always 1.
 
+### Machine screen versus the card (one night)
+
+The machine's "Last night" history screen was compared with the parsed `A5`
+summary for the same night:
+
+| Screen | Screen value | Card | Match |
+| --- | --- | --- | --- |
+| Valid days (>4h) | 1/1 | usage 418 min | Yes |
+| Used hours | 6.9 h | `0x54` = 418 min (6.97 h) | Yes; the screen truncates to 0.1 h |
+| Average pressure | 6.2 hPa | `0x4E` = 6.2 | Yes. The per-second mean from the `.dat` is 6.3, so show the summary value when there is one |
+| P90 | 7.5 hPa | `0x50` = 7.5 | Yes |
+| AHI | 1.6 | `0x58` = 1.6 | Yes |
+| SNI | 0.0 | `0x56` = 0 | Yes |
+| LEAK90 | 0.0 l/min | `0x52` = 0 | Yes |
+| CAI | 0.9 | `0x5C` = 0.9 | Yes |
+| AI | 1.0 | `0x5A` = 1.0 | Yes |
+| HI | 0.6 | `0x60` = 0.6 | Yes |
+
+What this settles:
+
+- **The pressure-unit byte `0x1D` = 1 means hPa** (the screen shows hPa;
+  the setting never changed on this card). 1 hPa ≈ 1.02 cmH2O, so the two can
+  be shown as the same number.
+- **`0x52` is the screen's "LEAK90", but it does not behave like a 90th
+  percentile.** On that night the excess-leak channel (slots 270-319) had a
+  p90 of 4 L/min and slot 384 had a p90 of 33 L/min, yet the screen and card
+  both say 0. Total leak never went above 90 L/min, which fits NeoRead's
+  meaning, "minutes with leak above 90 L/min". Treat it as large-leak
+  minutes, despite the screen's l/min label. Likely.
+- The screen shows no ordinary leak figure, so it can't tell us which leak
+  channel is "the" leak. SleepLens should show the excess leak (slots
+  270-319, NeoRead's leak graph) for mask seal, with large-leak minutes
+  next to it.
+
 ### Open questions
 
 Settled by NeoRead:
@@ -389,12 +423,11 @@ Still need the real card (NeoRead runs on Windows only):
 1. `E4`-`E6` never appear on firmware `1.01.47.01` and `E7` is always 0, so
    whether they match NeoRead's `A4`-`A7` can't be proven from this card.
    A card from someone who snores would settle `E4` / `E7`.
-2. Which leak the machine's screen shows: slot 384 (likely total) or slots
-   270-319 (likely excess)? Compare with the screen for the same nights.
-3. Pressure unit (`C5 C5` `0x1D`, always 1 here): does 1 mean hPa or cmH2O?
-   Read off the machine's screen.
-4. SNI and large-leak minutes read 0 on every night; check that the screen's
-   SNI is also 0.
+2. ~~Which leak the screen shows~~: the screen shows only LEAK90 (`0x52`,
+   0 here). Slot 384 looks like total leak and slots 270-319 like excess
+   leak; a night with a real large leak would confirm `0x52`.
+3. ~~Pressure unit~~: 1 = hPa. The cmH2O value is still unknown (likely 0).
+4. ~~SNI on the screen~~: 0.0, matching the card.
 
 ## ResMed AirSense 10 / 11
 
